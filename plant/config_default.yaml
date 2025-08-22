@@ -1,0 +1,57 @@
+simulation:
+  dt_sim: 0.01
+  time_scale: 100.0
+  mode: SIL
+  rng_seed: 12345
+  t_final: 5.0
+
+spacecraft:
+  mass: 10.0
+  inertia: [0.1, 0.1, 0.1]
+  shape: [0.1, 0.1, 0.3]
+
+sensors:
+  gps:
+    rate_hz: 1.0
+    sigma_pos_m: 5.0
+    sigma_vel_mps: 0.5
+  gyro:
+    rate_hz: 100.0
+    sigma_radps: 0.001
+    bias_rw_sigma: 0.00001
+
+actuators:
+  reaction_wheels:
+    max_torque: 0.01
+    max_speed_rpm: 6000
+    inertia: 0.001
+
+perturbations:
+  two_body: true
+  j2: false
+  jn: false
+  sun_moon: false
+  srp: false
+  drag: false
+
+comms:
+  protocol: udp
+  udp:
+    plant_to_flight_port: 10001
+    flight_to_plant_port: 10002
+
+watchdog:
+  timeout_sec: 1.0
+
+logging:
+  replay_file: logs/replay.ndjson
+
+initial_conditions:
+  # ~500 km circular orbit around Earth, ECI position on x-axis.
+  r_eci_m: [6871000.0, 0.0, 0.0]
+  v_eci_mps: [0.0, 7610.0, 0.0]
+  q_bi: [0.0, 0.0, 0.0, 1.0]
+  omega_b_radps: [0.0, 0.0, 0.0]
+
+
+
