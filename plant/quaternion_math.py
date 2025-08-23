@@ -1,15 +1,5 @@
 import numpy as np
 
-
-def skew(v: np.ndarray) -> np.ndarray:
-    """Return the 3x3 skew-symmetric matrix (v_x) of a 3-element vector v."""
-    return np.array([
-        [0, -v[2], v[1]],
-        [v[2], 0, -v[0]],
-        [-v[1], v[0], 0]
-    ])
-
-
 class Quaternion:
     """A quaternion class for attitude representation and operations.
 
@@ -118,12 +108,21 @@ class Quaternion:
 
     @property
     def x(self) -> np.ndarray:
-        """Quaternion (x) product matrix.
+        """Quaternion ⊗ product matrix.
 
         Output: np.ndarray of shape (4,4)
-        Usage: q1.q_x() @ q2.q
+        Usage in the context of quaternion multiplication: q1.x() @ q2.q
         Source: Markley (Eq. 2.85, p.38)"""
         return np.hstack((self.Psi, self._q))
+
+    @property
+    def ddot(self) -> np.ndarray:
+        """Quaternion ⨀ product matrix.
+
+        Output: np.ndarray of shape (4,4)
+        Usage in the context of quaternion multiplication: q1.ddot() @ q2.q
+        Source: Markley (Eq. 2.86, p.38)"""
+        return np.hstack((self.Xi, self._q))
 
     @property
     def n(self) -> 'Quaternion':
@@ -173,7 +172,7 @@ class Quaternion:
         return Quaternion(self._q - other._q)
     
     def __mul__(self, other):
-        """Quaternion multiplication, defined as (x) operator from Markley.
+        """Quaternion multiplication, defined as ⊗ operator from Markley.
         If the second argument is a vector, it is treated as a quaternion with a zero scalar component."""
         if isinstance(other, Quaternion):
             return Quaternion(self.x @ other._q)
@@ -184,6 +183,25 @@ class Quaternion:
                 v4 = np.zeros((4,1))
                 v4[:3,0] = other.flatten()
                 return Quaternion(self.x @ v4)
+            else:
+                raise ValueError("Can only multiply Quaternion by a 3-element vector")
+        elif np.isscalar(other):
+            return Quaternion(self._q * other)
+        else:
+            return NotImplemented
+
+    def __pow__(self, other):
+        """Quaternion multiplication, defined as ⊙ operator from Markley.
+        If the second argument is a vector, it is treated as a quaternion with a zero scalar component."""
+        if isinstance(other, Quaternion):
+            return Quaternion(self.ddot @ other._q)
+        elif isinstance(other, np.ndarray):
+            # Handle 3x1 or (3,) vector
+            if other.shape == (3,) or other.shape == (3,1):
+                # Make it a 4x1 array with 4th element zero
+                v4 = np.zeros((4,1))
+                v4[:3,0] = other.flatten()
+                return Quaternion(self.ddot @ v4)
             else:
                 raise ValueError("Can only multiply Quaternion by a 3-element vector")
         elif np.isscalar(other):
