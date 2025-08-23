@@ -161,3 +161,21 @@ class Quaternion:
     def __repr__(self) -> str:
         """Detailed string representation."""
         return f"Quaternion(q={self._q.flatten()}, norm={self.norm:.6f})"
+
+    def __add__(self, other: 'Quaternion') -> 'Quaternion':
+        sum = self._q + other._q
+        return Quaternion(sum)
+
+    def __sub__(self, other: 'Quaternion') -> 'Quaternion':
+        sub = self._q - other._q
+        return Quaternion(sub)
+    
+    def __mul__(self, other: 'Quaternion') -> 'Quaternion': # we define quaternion multiplication as the (x) product from Markley 
+        return Quaternion(self.x @ other._q)
+
+    def __invert__(self) -> 'Quaternion': # inverse of a quaternion is the conjugate divided by the norm squared
+        return Quaternion(-self._q[0], -self._q[1], -self._q[2], self._q[3]) / self.norm**2
+    
+    def __truediv__(self, other: float) -> 'Quaternion': # scalar division
+        return Quaternion(self._q / other)
+    

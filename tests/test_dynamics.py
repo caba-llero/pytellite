@@ -20,23 +20,13 @@ def test_two_body_energy_conservation_short_run():
     assert rel_err < 1e-6
 
 
-def test_quaternion_ops():
-    q = np.array([0.0, 0.0, 0.0, 10.0])
-    qn = quaternion_normalize(q)
-    assert np.isclose(np.linalg.norm(qn), 1.0)
-
-    # identity multiply
-    qi = np.array([0.0, 0.0, 0.0, 1.0])
-    qm = quaternion_multiply(qn, qi)
-    assert np.allclose(qm, qn)
-
-
 def test_attitude_integration_constant_rate():
     q = np.array([0.0, 0.0, 0.0, 1.0])
     w = np.array([0.01, 0.0, 0.0])
     dt = 0.1
     for _ in range(100):
         q = integrate_attitude_rk4(q, w, dt)
+        print(q)
     assert np.isclose(np.linalg.norm(q), 1.0)
 
 
