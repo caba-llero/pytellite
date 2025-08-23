@@ -103,13 +103,27 @@ class Quaternion:
         ])
 
     @property
+    def Xi(self) -> np.ndarray:
+        """The Xi(q) function for quaternions.
+
+        Output: np.ndarray of shape (4,3)
+        Source: Markley (Eq. 2.88, p.38)"""
+        q_flat = self._q.flatten()
+        return np.array([
+            [q_flat[3], -q_flat[2], q_flat[1]],
+            [q_flat[2], q_flat[3], -q_flat[0]],
+            [-q_flat[1], q_flat[0], q_flat[3]],
+            [-q_flat[0], -q_flat[1], -q_flat[2]]
+        ])
+
+    @property
     def x(self) -> np.ndarray:
         """Quaternion (x) product matrix.
 
         Output: np.ndarray of shape (4,4)
         Usage: q1.q_x() @ q2.q
         Source: Markley (Eq. 2.85, p.38)"""
-        return np.hstack((self.Psi(), self._q))
+        return np.hstack((self.Psi, self._q))
 
     @property
     def n(self) -> 'Quaternion':
@@ -143,10 +157,6 @@ class Quaternion:
     def is_normalized(self) -> bool:
         """Check if the quaternion is normalized."""
         return np.isclose(self.norm, 1.0)
-
-    def __str__(self) -> str:
-        """String representation of the quaternion."""
-        return f"Quaternion({self._q.flatten()})"
 
     def __repr__(self) -> str:
         """Detailed string representation."""

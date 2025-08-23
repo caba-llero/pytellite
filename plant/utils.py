@@ -13,6 +13,10 @@ def load_protocol_schemas(schema_path: str) -> dict:
 
 
 class NDJSONUDPSocket:
+    """
+    NDJSONUDPSocket is a class that handles the sending and receiving of NDJSON over UDP.
+    It is used to send and receive messages between the plant and the flight software.
+    """
     def __init__(self, send_host: str, send_port: int, recv_port: int, recv_timeout: float = 0.0):
         self.sock_send = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.send_addr = (send_host, send_port)
@@ -22,14 +26,14 @@ class NDJSONUDPSocket:
         # Non-blocking by default to avoid stalling the simulation loop
         self.sock_recv.settimeout(max(0.0, recv_timeout))
 
-    def send_json(self, obj: dict):
+    def send_json(self, obj: dict): # send a json object to the flight software
         line = json.dumps(obj, separators=(",", ":")) + "\n"
         self.sock_send.sendto(line.encode("utf-8"), self.send_addr)
 
-    def try_recv_json(self) -> Optional[dict]:
+    def try_recv_json(self) -> Optional[dict]: # try to receive a json object from the flight software; Optional as it may not receive anything
         try:
-            data, _ = self.sock_recv.recvfrom(65535)
-        except socket.timeout:
+            data, _ = self.sock_recv.recvfrom(65535) # 65535 is the max UDP packet size
+        except socket.timeout: 
             return None
         except BlockingIOError:
             return None

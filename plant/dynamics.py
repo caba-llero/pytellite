@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from .quaternion_math import quaternion_multiply, quaternion_normalize
+from .quaternion_math import Quaternion
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
 
@@ -32,26 +32,26 @@ def rk4_step_orbit(r_eci: np.ndarray, v_eci: np.ndarray, dt: float, mu: float = 
     return r_next, v_next
 
 
-def omega_to_quat_derivative(q: np.ndarray, w: np.ndarray) -> np.ndarray:
+def omega_to_quat_derivative(q: Quaternion, w: np.ndarray) -> Quaternion:
     """Convert angular velocity to quaternion derivative.
     Inputs:
-        q: np.ndarray of shape (4,1)
-        w: np.ndarray of shape (3,1)
+        q: Quaternion
+        w: np.ndarray of shape (3,)
     Output:
-        dq: np.ndarray of shape (4,1)
-    """
-    wx, wy, wz = w
-    omega_quat = np.array([wx, wy, wz, 0.0])
-    dq = 0.5 * quaternion_multiply(q, omega_quat)
-    return dq
+        dq/dt: Quaternion
 
-def integrate_attitude_rk4(q_bi: np.ndarray, omega_b: np.ndarray, dt: float) -> np.ndarray:
+    Source: Markley (Eq. 3.20, p.71)
+    """
+    dqdt = 0.5 * q.Xi @ w
+    return dqdt
+
+def integrate_attitude_rk4(q_bi: Quaternion, omega_b: np.ndarray, dt: float) -> Quaternion:
     k1 = omega_to_quat_derivative(q_bi, omega_b)
     k2 = omega_to_quat_derivative(q_bi + 0.5 * dt * k1, omega_b)
     k3 = omega_to_quat_derivative(q_bi + 0.5 * dt * k2, omega_b)
     k4 = omega_to_quat_derivative(q_bi + dt * k3, omega_b)
     q_next = q_bi + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
-    return quaternion_normalize(q_next)
+    return q_next.n
 
 
 
