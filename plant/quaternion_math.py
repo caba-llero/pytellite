@@ -158,24 +158,61 @@ class Quaternion:
         """Check if the quaternion is normalized."""
         return np.isclose(self.norm, 1.0)
 
+    @property 
+    def conj(self) -> 'Quaternion':
+        return Quaternion(-self._q[0], -self._q[1], -self._q[2], self._q[3])
+
     def __repr__(self) -> str:
         """Detailed string representation."""
         return f"Quaternion(q={self._q.flatten()}, norm={self.norm:.6f})"
 
     def __add__(self, other: 'Quaternion') -> 'Quaternion':
-        sum = self._q + other._q
-        return Quaternion(sum)
+        return Quaternion(self._q + other._q)
 
     def __sub__(self, other: 'Quaternion') -> 'Quaternion':
-        sub = self._q - other._q
-        return Quaternion(sub)
+        return Quaternion(self._q - other._q)
     
-    def __mul__(self, other: 'Quaternion') -> 'Quaternion': # we define quaternion multiplication as the (x) product from Markley 
-        return Quaternion(self.x @ other._q)
+    def __mul__(self, other):
+        """Quaternion multiplication, defined as (x) operator from Markley.
+        If the second argument is a vector, it is treated as a quaternion with a zero scalar component."""
+        if isinstance(other, Quaternion):
+            return Quaternion(self.x @ other._q)
+        elif isinstance(other, np.ndarray):
+            # Handle 3x1 or (3,) vector
+            if other.shape == (3,) or other.shape == (3,1):
+                # Make it a 4x1 array with 4th element zero
+                v4 = np.zeros((4,1))
+                v4[:3,0] = other.flatten()
+                return Quaternion(self.x @ v4)
+            else:
+                raise ValueError("Can only multiply Quaternion by a 3-element vector")
+        elif np.isscalar(other):
+            return Quaternion(self._q * other)
+        else:
+            return NotImplemented
 
     def __invert__(self) -> 'Quaternion': # inverse of a quaternion is the conjugate divided by the norm squared
-        return Quaternion(-self._q[0], -self._q[1], -self._q[2], self._q[3]) / self.norm**2
+        return self.conj / self.norm**2
     
     def __truediv__(self, other: float) -> 'Quaternion': # scalar division
         return Quaternion(self._q / other)
+
+    def __rmul__(self, other) -> 'Quaternion': # scalar multiplication
+        if isinstance(other, np.ndarray):   # Handle 3x1 or (3,) vector
+            if other.shape == (3,) or other.shape == (3,1):  # Make it a 4x1 array with 4th element zero              
+                v4 = np.zeros((4,1))
+                v4[:3,0] = other.flatten()
+                return Quaternion(self.x @ v4)
+            else:
+                raise ValueError("Can only multiply Quaternion by a 3-element vector")
+        elif np.isscalar(other):
+            return Quaternion(self._q * other)
+        else:
+            return NotImplemented
+    
+    def __eq__(self, other: 'Quaternion') -> bool:
+        return np.allclose(self._q, other._q)
+    
+
+    
     

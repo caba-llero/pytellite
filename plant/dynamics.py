@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from .quaternion_math import Quaternion
+from plant.quaternion_math import Quaternion
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
 
@@ -42,7 +42,7 @@ def omega_to_quat_derivative(q: Quaternion, w: np.ndarray) -> Quaternion:
 
     Source: Markley (Eq. 3.20, p.71)
     """
-    dqdt = 0.5 * q.Xi @ w
+    dqdt = 0.5 * q * w
     return dqdt
 
 def integrate_attitude_rk4(q_bi: Quaternion, omega_b: np.ndarray, dt: float) -> Quaternion:

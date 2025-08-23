@@ -1,7 +1,7 @@
 import numpy as np
 
 from plant.dynamics import rk4_step_orbit, MU_EARTH, quaternion_normalize, quaternion_multiply, integrate_attitude_rk4
-
+from plant.quaternion_math import Quaternion
 
 def specific_orbital_energy(r, v, mu=MU_EARTH):
     rnorm = np.linalg.norm(r)
@@ -21,13 +21,13 @@ def test_two_body_energy_conservation_short_run():
 
 
 def test_attitude_integration_constant_rate():
-    q = np.array([0.0, 0.0, 0.0, 1.0])
+    q = Quaternion(0.0, 0.0, 0.0, 1.0)
     w = np.array([0.01, 0.0, 0.0])
     dt = 0.1
     for _ in range(100):
         q = integrate_attitude_rk4(q, w, dt)
         print(q)
-    assert np.isclose(np.linalg.norm(q), 1.0)
+    assert np.isclose(q.norm, 1.0)
 
 
 
