@@ -50,8 +50,11 @@ initial_conditions:
   # ~500 km circular orbit around Earth, ECI position on x-axis.
   r_eci_m: [6871000.0, 0.0, 0.0]
   v_eci_mps: [0.0, 7610.0, 0.0]
-  q_bi: [0.0, 0.0, 0.0, 1.0]
-  omega_b_radps: [0.0, 0.0, 0.0]
+  # q_ob: quaternion from orbit frame to body frame.
+  # A 45 deg rotation over the x-axis.
+  q_ob: [0.38268, 0.0, 0.0, 0.92388]
+  # omega_bo_radps: angular velocity of body wrt orbit frame, in body frame [rad/s]
+  omega_bo_radps: [0.2, -0.1, 0.3]
 
 
 

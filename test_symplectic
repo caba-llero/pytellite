@@ -1,0 +1,69 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def skew(v):
+    """Return the skew-symmetric matrix of a 3-vector."""
+    return np.array([
+        [0, -v[2], v[1]],
+        [v[2], 0, -v[0]],
+        [-v[1], v[0], 0]
+    ], dtype=float)
+
+# Cayley rotation that preserves |Pi|
+def cayley_rotate(Pi, J, dt):
+    Omega = np.linalg.solve(J, Pi)          # Omega_n
+    A = skew(Omega)
+    I = np.eye(3)
+    Q = np.linalg.solve(I - 0.5*dt*A, I + 0.5*dt*A)  # orthogonal
+    return Q @ Pi
+
+
+def euler_rhs(w, J):
+    """Euler's equations: dw/dt = J^{-1} ( - w x J w )"""
+    return np.linalg.inv(J) @ (-skew(w) @ J @ w)
+
+
+# Inertia matrix (asymmetric, diagonal is simplest)
+J = np.diag([2.0, 1.0, 0.5])
+
+# Initial angular velocity
+w0 = np.array([1.0, 0.5, 0.2])
+
+# Time setup
+dt = 0.01
+T = 100
+N = int(T/dt)
+t = np.linspace(0, T, N+1)
+
+# RK4 integration
+w_rk4 = np.zeros((N+1,3))
+w_rk4[0] = w0.copy()
+for i in range(N):
+    k1 = euler_rhs(w_rk4[i], J)
+    k2 = euler_rhs(w_rk4[i] + 0.5*dt*k1, J)
+    k3 = euler_rhs(w_rk4[i] + 0.5*dt*k2, J)
+    k4 = euler_rhs(w_rk4[i] + dt*k3, J)
+    w_rk4[i+1] = w_rk4[i] + (dt/6)*(k1 + 2*k2 + 2*k3 + k4)
+
+# Symplectic Euler integration 
+w_cay = np.zeros((N+1, 3))
+w_cay[0] = w0.copy()
+Pi = J @ w_cay[0]
+for i in range(N):
+    Pi = cayley_rotate(Pi, J, dt)           # |Pi| preserved
+    w_cay[i+1] = np.linalg.solve(J, Pi)
+
+
+# Angular momentum magnitude
+L_rk4 = np.linalg.norm((J @ w_rk4.T).T, axis=1)
+L_cay = np.linalg.norm((J @ w_cay.T).T, axis=1)
+
+plt.figure(figsize=(8,4))
+plt.plot(t, L_rk4, label='RK4 |L|')
+plt.plot(t, L_cay, label='Symplectic Euler |L|', linestyle='--')
+plt.xlabel('Time [s]')
+plt.ylabel('Angular momentum magnitude')
+plt.title('Conservation of Angular Momentum (Torque-free)')
+plt.legend()
+plt.grid(True)
+plt.show()

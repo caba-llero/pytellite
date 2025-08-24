@@ -233,4 +233,66 @@ class Quaternion:
     
 
     
+def rotmatrix_to_quaternion(A: np.ndarray) -> Quaternion:
+    """
+    Convert a rotation matrix to a quaternion.
+    Source: Markley (Eq. 2.135, p.48)
+    """
+    trA = np.trace(A)
+    A11 = A[0,0]
+    A22 = A[1,1]
+    A33 = A[2,2]
+
+    if max(trA, A11, A22, A33) == trA:
+        q4 = np.sqrt(1 + trA) / 2
+        q1 = (A[2,1] - A[1,2]) / (4 * q4)
+        q2 = (A[0,2] - A[2,0]) / (4 * q4)
+        q3 = (A[1,0] - A[0,1]) / (4 * q4)
+    elif max(trA, A11, A22, A33) == A11:
+        q1 = np.sqrt(1 + 2 * A11 - trA) / 2
+        q2 = (A[0,1] + A[1,0]) / (4 * q1)
+        q3 = (A[0,2] + A[2,0]) / (4 * q1)
+        q4 = (A[1,2] - A[2,1]) / (4 * q1)
+    elif max(trA, A11, A22, A33) == A22:
+        q2 = np.sqrt(1 + 2 * A22 - trA) / 2
+        q1 = (A[0,1] + A[1,0]) / (4 * q2)
+        q3 = (A[1,2] + A[2,1]) / (4 * q2)
+        q4 = (A[0,2] - A[2,0]) / (4 * q2)
+    elif max(trA, A11, A22, A33) == A33:
+        q3 = np.sqrt(1 + 2 * A33 - trA) / 2
+        q1 = (A[0,2] + A[2,0]) / (4 * q3)
+        q2 = (A[1,2] + A[2,1]) / (4 * q3)
+        q4 = (A[0,1] - A[1,0]) / (4 * q3)   
+
+    return Quaternion(q1, q2, q3, q4)
+
+def quat_to_rotmatrix(q: Quaternion) -> np.ndarray:
+    """Quaternion to rotation matrix
+    Markley (Eq. 2.129, p.46)"""
+    return q.Xi.T @ q.Psi
+
+
+def rotmatrix_to_euler313(A: np.ndarray) -> np.ndarray:    
+    theta = np.arccos(A[2,2]) # pitch
+    sigma = np.sign(np.sin(theta))
+
+    phi = np.arctan2(sigma*A[2,0], -sigma*A[2,1]) # roll
+    psi = np.arctan2(sigma*A[0,2], sigma*A[1,2]) # yaw
+
+    return np.array([phi, theta, psi])
+
+def rotmatrix_to_euler321(A: np.ndarray) -> np.ndarray:
+    """Rotation matrix to Euler angles (ZYX sequence for roll, pitch, yaw).
     
+    Output: np.ndarray with [roll, pitch, yaw]
+    """
+    pitch = np.arcsin(-A[2,0])
+    yaw = np.arctan2(A[1,0], A[0,0])
+    roll = np.arctan2(A[2,1], A[2,2])
+    return np.array([roll, pitch, yaw])
+
+
+
+def quat_to_euler(q: Quaternion) -> np.ndarray:
+    """Quaternion to Euler angles (ZYX sequence for roll, pitch, yaw)"""
+    return rotmatrix_to_euler321(quat_to_rotmatrix(q))
