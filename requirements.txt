@@ -3,4 +3,5 @@ pyyaml>=6.0
 jsonschema>=4.19
 spiceypy>=5.1.2
 pytest>=7.4
+matplotlib>=3.0
 

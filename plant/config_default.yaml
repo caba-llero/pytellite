@@ -7,7 +7,7 @@ simulation:
 
 spacecraft:
   mass: 10.0
-  inertia: [0.1, 0.1, 0.1]
+  inertia: [1, 1, 3]
   shape: [0.1, 0.1, 0.3]
 
 sensors:
@@ -50,11 +50,22 @@ initial_conditions:
   # ~500 km circular orbit around Earth, ECI position on x-axis.
   r_eci_m: [6871000.0, 0.0, 0.0]
   v_eci_mps: [0.0, 7610.0, 0.0]
+
+  # Initial attitude can be specified wrt the orbit frame or the inertial frame.
+  # Use the 'frame' parameter to choose.
+  frame: 'inertial' # 'orbit' or 'inertial'
+
+  # Orbit frame initial conditions
   # q_ob: quaternion from orbit frame to body frame.
   # A 45 deg rotation over the x-axis.
   q_ob: [0.38268, 0.0, 0.0, 0.92388]
   # omega_bo_radps: angular velocity of body wrt orbit frame, in body frame [rad/s]
   omega_bo_radps: [0.2, -0.1, 0.3]
+
+  # Inertial frame initial conditions
+  # A 30 deg rotation over the y-axis.
+  q_bi: [0.0, 0.2588, 0.0, 0.9659]
+  omega_bi_radps: [0.01, 0.02, 0.1]
 
 
 

@@ -41,19 +41,29 @@ class Plant:
         self.L = np.zeros(3) # No torque
 
         # Initial attitude state
-        q_bo_init = Quaternion(cfg["initial_conditions"]["q_ob"])
-        w_bo_init = np.array(cfg["initial_conditions"]["omega_bo_radps"], dtype=float)
+        ic = cfg["initial_conditions"]
+        frame = ic.get("frame", "inertial")
 
-        # Compute initial orbit frame
-        _, _, a0 = rk4_step_orbit(r0, v0, 0) # Get initial acceleration
-        R_io, w_oi = orbit_to_inertial(r0, v0, a0)
-        q_io = rotmatrix_to_quaternion(R_io)
+        if frame == 'orbit':
+            q_bo_init = Quaternion(ic["q_ob"])
+            w_bo_init = np.array(ic["omega_bo_radps"], dtype=float)
 
-        # Initialize body state wrt inertial frame
-        self.q_bi = q_io * q_bo_init
-        
-        R_bo = quat_to_rotmatrix(q_bo_init)
-        self.w_bi = w_bo_init + R_bo.T @ w_oi
+            # Compute initial orbit frame
+            _, _, a0 = rk4_step_orbit(r0, v0, 0) # Get initial acceleration
+            R_io, w_oi = orbit_to_inertial(r0, v0, a0)
+            q_io = rotmatrix_to_quaternion(R_io)
+
+            # Initialize body state wrt inertial frame
+            self.q_bi = q_io * q_bo_init
+            
+            R_bo = quat_to_rotmatrix(q_bo_init)
+            self.w_bi = w_bo_init + R_bo.T @ w_oi
+        elif frame == 'inertial':
+            self.q_bi = Quaternion(ic["q_bi"])
+            self.w_bi = np.array(ic["omega_bi_radps"], dtype=float)
+        else:
+            raise ValueError(f"Invalid initial condition frame: {frame}")
+
 
     def update(self) -> np.ndarray:
         """

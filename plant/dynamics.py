@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import numpy as np
-from plant.quaternion_math import Quaternion
+try:
+    from plant.quaternion_math import Quaternion
+except ImportError:
+    # Fallback for direct import (when not used as part of plant package)
+    from quaternion_math import Quaternion
 from numpy.linalg import inv, solve
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
@@ -87,6 +91,29 @@ def integrate_attitude_rk4(q_bi: Quaternion, omega_b: np.ndarray, dt: float) -> 
 
     q_next = q_bi + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
     return q_next.n
+
+def integrate_attitude_quat_mult(q_bi: Quaternion, omega_b: np.ndarray, dt: float) -> Quaternion:
+    """
+    Integrate attitude using quaternion multiplication.
+    Inputs:
+        q_bi: Quaternion - current body-to-inertial attitude
+        omega_b: np.ndarray of shape (3,) - body angular velocity
+        dt: float - time step
+
+    Output:
+        q_next: Quaternion - next attitude
+    """
+
+    theta = np.linalg.norm(omega_b) * dt
+    if theta == 0:
+        return q_bi
+    
+    axis = omega_b / np.linalg.norm(omega_b)
+    q_next = q_bi * Quaternion(axis * np.sin(theta / 2), np.cos(theta / 2))
+    return q_next.n
+    
+
+
 
 def eulers_equations(w: np.ndarray, J: np.ndarray, L: np.ndarray) -> np.ndarray:
     """
