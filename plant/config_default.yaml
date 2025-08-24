@@ -64,8 +64,8 @@ initial_conditions:
 
   # Inertial frame initial conditions
   # A 30 deg rotation over the y-axis.
-  q_bi: [0.0, 0.2588, 0.0, 0.9659]
-  omega_bi_radps: [0.01, 0.02, 0.1]
+  q_bi: [0.0, 0, 0.0, 1]
+  omega_bi_radps: [0, 0, 0.1]
 
 
 

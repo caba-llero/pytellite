@@ -19,11 +19,17 @@ import argparse
 import numpy as np
 import yaml
 
-from .dynamics import rk4_step_orbit, integrate_attitude_rk4, integrate_ang_vel_symplectic, orbit_to_inertial
-from .quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
+try:
+    # Try relative imports (when run as module)
+    from .dynamics import rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_symplectic, orbit_to_inertial
+    from .quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
+except ImportError:
+    # Fall back to absolute imports (when imported by other scripts)
+    from dynamics import rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_symplectic, orbit_to_inertial
+    from quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
 
 class Plant:
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str = "plant/config_default.yaml"):
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
 
@@ -75,7 +81,7 @@ class Plant:
         # self.r_i, self.v_i, _ = rk4_step_orbit(self.r_i, self.v_i, self.dt_sim)
 
         self.w_bi = integrate_ang_vel_symplectic(self.w_bi, self.J, self.L, self.dt_sim)
-        self.q_bi = integrate_attitude_rk4(self.q_bi, self.w_bi, self.dt_sim)
+        self.q_bi = integrate_attitude_quat_mult(self.q_bi, self.w_bi, self.dt_sim)
 
         self.t_sim += self.dt_sim
         

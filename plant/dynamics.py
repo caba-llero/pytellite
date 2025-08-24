@@ -109,7 +109,10 @@ def integrate_attitude_quat_mult(q_bi: Quaternion, omega_b: np.ndarray, dt: floa
         return q_bi
     
     axis = omega_b / np.linalg.norm(omega_b)
-    q_next = q_bi * Quaternion(axis * np.sin(theta / 2), np.cos(theta / 2))
+    s2 = np.sin(theta / 2)
+    c2 = np.cos(theta / 2)
+    dq = Quaternion(axis[0] * s2, axis[1] * s2, axis[2] * s2, c2)
+    q_next = q_bi * dq
     return q_next.n
     
 
