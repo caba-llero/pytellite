@@ -202,7 +202,7 @@ async def calculation_and_update_server(websocket):
     plant = Plant('plant/config_default.yaml')
     try:
         while True:
-            euler_angles = plant.update()
+            euler_angles, angular_velocity = plant.update()
             
             angles = {"roll": euler_angles[0], "pitch": euler_angles[1], "yaw": euler_angles[2]}
             await websocket.send(json.dumps(angles))

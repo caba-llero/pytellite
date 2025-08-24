@@ -84,8 +84,11 @@ class Plant:
         self.q_bi = integrate_attitude_quat_mult(self.q_bi, self.w_bi, self.dt_sim)
 
         self.t_sim += self.dt_sim
+
+        euler_angles = quat_to_euler(self.q_bi)
+        angular_velocity = self.w_bi
         
-        return quat_to_euler(self.q_bi)
+        return euler_angles, angular_velocity
 
 
 def main():
@@ -103,9 +106,11 @@ def main():
 
     # Example of how to use the Plant class
     plant = Plant(args.config)
-    for _ in range(1000):
+    print(plant.q_bi)
+    print(plant.w_bi)
+    for _ in range(10000):
         euler_angles = plant.update()
-        print(f"t={plant.t_sim:.2f}, roll={euler_angles[0]:.2f}, pitch={euler_angles[1]:.2f}, yaw={euler_angles[2]:.2f}")
+        #print(f"t={plant.t_sim:.2f}, roll={euler_angles[0]:.2f}, pitch={euler_angles[1]:.2f}, yaw={euler_angles[2]:.2f}")
 
 
 if __name__ == "__main__":
