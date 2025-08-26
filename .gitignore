@@ -1,1 +1,16 @@
-sim.py
+﻿__pycache__/
+*.pyc
+*.pyo
+*.pyd
+logs/
+.DS_Store
+Thumbs.db
+.env
+.venv
+.envrc
+.python-version
+.ipynb_checkpoints/
+.mypy_cache/
+.pytest_cache/
+__pycache__/
+
