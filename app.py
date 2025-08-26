@@ -121,13 +121,35 @@ def _serve_static_request(path: str):
 
 async def main():
     # Serve both HTTP (static files + /healthz) and WebSocket on the SAME port
-    async def process_request(path, request):
-        # If this is a normal HTTP request (not a WS upgrade), serve static
-        upgrade_hdr = request.headers.get('Upgrade', '')
-        if upgrade_hdr.lower() != 'websocket':
-            return _serve_static_request(path)
-        # Otherwise, proceed with WebSocket handshake (return None)
-        return None
+    async def process_request(arg1, arg2):
+        # Support both old (path, headers) and new (connection, request) signatures
+        try:
+            if isinstance(arg1, str):
+                path = arg1
+                headers = arg2 or {}
+            else:
+                # Newer websockets: (connection, request)
+                request = arg2
+                path = getattr(request, 'path', '/')
+                headers = getattr(request, 'headers', {})
+
+            upgrade_hdr = ''
+            if hasattr(headers, 'get'):
+                upgrade_hdr = headers.get('Upgrade', headers.get('upgrade', ''))
+            else:
+                upgrade_hdr = ''
+
+            if isinstance(upgrade_hdr, (bytes, bytearray)):
+                upgrade_hdr = upgrade_hdr.decode('latin-1', errors='ignore')
+
+            # If this is a normal HTTP request (not a WS upgrade), serve static
+            if (upgrade_hdr or '').lower() != 'websocket':
+                return _serve_static_request(path)
+            # Otherwise, proceed with WebSocket handshake (return None)
+            return None
+        except Exception:
+            # On any unexpected error during detection, fall back to serving static
+            return _serve_static_request('/')
 
     print(f"Starting unified HTTP+WebSocket server on {HOST}:{HTTP_PORT}")
     async with websockets.serve(
