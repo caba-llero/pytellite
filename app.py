@@ -7,6 +7,7 @@ import asyncio
 import http
 import json
 import os
+import signal
 from plant.plant import Plant
 
 # This is the main server function from the websockets library
@@ -71,7 +72,7 @@ def _guess_mime_type(path: str) -> str:
 # --- HTTP REQUEST PROCESSOR (NEW AND CORRECTED) ---
 # This function uses the pattern from the documentation you provided.
 # It receives the connection and request objects.
-async def process_request(connection, request):
+def process_request(connection, request):
     # Check if the request is for a WebSocket upgrade.
     # If so, return None to let the websockets library handle it.
     if "Upgrade" in request.headers and request.headers["Upgrade"].lower() == "websocket":
@@ -83,7 +84,7 @@ async def process_request(connection, request):
     # Handle health check endpoint
     if path == '/healthz':
         # Use connection.respond() as shown in the documentation
-        return await connection.respond(http.HTTPStatus.OK, "OK\n")
+        return connection.respond(http.HTTPStatus.OK, "OK\n")
 
     # Serve static files from the 'webapp' directory
     webapp_path = os.path.join(os.path.dirname(__file__), 'webapp')
@@ -95,7 +96,7 @@ async def process_request(connection, request):
 
     # Security check: prevent directory traversal attacks
     if not os.path.normpath(full_path).startswith(os.path.normpath(webapp_path)):
-        return await connection.respond(http.HTTPStatus.FORBIDDEN, "Forbidden")
+        return connection.respond(http.HTTPStatus.FORBIDDEN, "Forbidden")
 
     try:
         with open(full_path, 'rb') as f:
@@ -106,10 +107,10 @@ async def process_request(connection, request):
             "Content-Length": str(len(body)),
         }
         # Use connection.respond() to send the file
-        return await connection.respond(http.HTTPStatus.OK, response_headers, body)
+        return connection.respond(http.HTTPStatus.OK, response_headers, body)
     except (FileNotFoundError, IsADirectoryError):
         # Use connection.respond() for 404 errors
-        return await connection.respond(http.HTTPStatus.NOT_FOUND, "Not Found")
+        return connection.respond(http.HTTPStatus.NOT_FOUND, "Not Found")
 
 # --- MAIN SERVER STARTUP ---
 async def main():
@@ -121,6 +122,9 @@ async def main():
         HTTP_PORT,
         process_request=process_request,
     ) as server:
+        # Close the server when receiving SIGTERM (graceful shutdown for PaaS)
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGTERM, server.close)
         await server.wait_closed()
 
 if __name__ == "__main__":

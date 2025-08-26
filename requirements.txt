@@ -4,5 +4,5 @@ jsonschema>=4.19
 spiceypy>=5.1.2
 pytest>=7.4
 matplotlib>=3.0
-websockets>=12.0
+websockets>=15.0,<16
 
