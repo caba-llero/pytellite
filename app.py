@@ -3,11 +3,20 @@ import json
 import http
 import os
 import websockets
+# --- Add these lines for diagnostics ---
 print(f"--- DIAGNOSTIC: websockets version installed is {websockets.__version__} ---")
+# -----------------------------------------
 
-from plant.plant import Plant
-from websockets.http import Response, Headers
+import asyncio
+import json
+import http
+import os
+# CORRECTED IMPORT FOR MODERN WEBSOCKETS
+from websockets.legacy.http import Response, Headers
 from websockets.server import WebSocketServerProtocol
+from plant.plant import Plant
+
+# ... the rest of your code remains the same
 
 # --- Configuration ---
 HTTP_PORT = int(os.getenv('PORT', 8080)) # Use 8080 as a common default for web services
