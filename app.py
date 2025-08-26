@@ -4,18 +4,21 @@ print(f"--- DIAGNOSTIC: websockets version installed is {websockets.__version__}
 
 # --- IMPORTS ---
 import asyncio
-import json
 import http
+import json
 import os
 from plant.plant import Plant
-# No special websockets imports are needed.
+
+# This is the main server function from the websockets library
+from websockets.asyncio.server import serve
 
 # --- CONFIGURATION ---
 HTTP_PORT = int(os.getenv('PORT', 8080))
 HOST = os.getenv('HOST', '0.0.0.0')
 
 # --- WEBSOCKET HANDLER ---
-# (This part of your code is fine)
+# This is your application logic for when a WebSocket connection is established.
+# It does not need to change.
 async def calculation_and_update_server(websocket):
     print("Client connected.")
     is_paused = False
@@ -65,24 +68,24 @@ def _guess_mime_type(path: str) -> str:
     if path.endswith('.svg'): return 'image/svg+xml'
     return 'application/octet-stream'
 
-# --- MAIN SERVER LOGIC ---
-# FIXED: Updated function signature for websockets 15.0.1
+# --- HTTP REQUEST PROCESSOR (NEW AND CORRECTED) ---
+# This function uses the pattern from the documentation you provided.
+# It receives the connection and request objects.
 async def process_request(connection, request):
-    # Get the path and headers from the request object (second argument).
-    path = request.path
-    headers = request.headers
-
-    # Health check endpoint
-    if path == '/healthz':
-        response_headers = [("Content-Type", "text/plain")]
-        return http.HTTPStatus.OK, response_headers, b"ok"
-
-    # Check if this is a WebSocket upgrade request.
-    if "Upgrade" in headers and headers["Upgrade"].lower() == "websocket":
-        # Returning None lets the WebSocket handshake proceed.
+    # Check if the request is for a WebSocket upgrade.
+    # If so, return None to let the websockets library handle it.
+    if "Upgrade" in request.headers and request.headers["Upgrade"].lower() == "websocket":
         return None
 
-    # If not a WebSocket, it's a regular HTTP request, so we serve a static file.
+    # This is a regular HTTP request. We will serve a file or a health check.
+    path = request.path
+    
+    # Handle health check endpoint
+    if path == '/healthz':
+        # Use connection.respond() as shown in the documentation
+        return await connection.respond(http.HTTPStatus.OK, "OK\n")
+
+    # Serve static files from the 'webapp' directory
     webapp_path = os.path.join(os.path.dirname(__file__), 'webapp')
     if path == '/':
         path = '/index.html'
@@ -90,31 +93,35 @@ async def process_request(connection, request):
     requested_path = os.path.normpath(path.lstrip('/'))
     full_path = os.path.join(webapp_path, requested_path)
 
+    # Security check: prevent directory traversal attacks
     if not os.path.normpath(full_path).startswith(os.path.normpath(webapp_path)):
-        return http.HTTPStatus.FORBIDDEN, [], b"Forbidden"
+        return await connection.respond(http.HTTPStatus.FORBIDDEN, "Forbidden")
 
     try:
         with open(full_path, 'rb') as f:
             body = f.read()
-        response_headers = [
-            ("Content-Type", _guess_mime_type(full_path)),
-            ("Content-Length", str(len(body))),
-        ]
-        return http.HTTPStatus.OK, response_headers, body
+        
+        response_headers = {
+            "Content-Type": _guess_mime_type(full_path),
+            "Content-Length": str(len(body)),
+        }
+        # Use connection.respond() to send the file
+        return await connection.respond(http.HTTPStatus.OK, response_headers, body)
     except (FileNotFoundError, IsADirectoryError):
-        response_headers = [("Content-Type", "text/plain")]
-        return http.HTTPStatus.NOT_FOUND, response_headers, b"Not Found"
+        # Use connection.respond() for 404 errors
+        return await connection.respond(http.HTTPStatus.NOT_FOUND, "Not Found")
 
-
+# --- MAIN SERVER STARTUP ---
 async def main():
     print(f"Starting unified HTTP+WebSocket server on {HOST}:{HTTP_PORT}")
-    async with websockets.serve(
+    # Pass the corrected process_request function to the server
+    async with serve(
         calculation_and_update_server,
         HOST,
         HTTP_PORT,
         process_request=process_request,
-    ):
-        await asyncio.Future()
+    ) as server:
+        await server.wait_closed()
 
 if __name__ == "__main__":
     print(f"Open your browser and navigate to http://{HOST}:{HTTP_PORT}")
