@@ -45,6 +45,39 @@ body {
     border-radius: 5px;
     z-index: 10;
 }
+#legend {
+    margin-top: 10px;
+    font-size: 12px;
+}
+.legend-section {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 3px 0;
+}
+.legend-text { color: #ddd; }
+.legend-line {
+    display: inline-block;
+    width: 28px;
+    height: 0;
+    border-top-width: 2px;
+    border-top-style: solid;
+    border-top-color: #ccc;
+}
+.legend-line.dashed { border-top-style: dashed; }
+.legend-line.solid { border-top-style: solid; }
+.legend-colors { gap: 10px; }
+.legend-color {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 3px;
+}
+.legend-color.x { background-color: #ff0000; }
+.legend-color.y { background-color: #00ff00; }
+.legend-color.z { background-color: #0000ff; }
+.legend-axis-label { margin-right: 8px; color: #ddd; }
 #pauseButton {
     width: 100%;
     padding: 8px;

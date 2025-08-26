@@ -20,55 +20,49 @@ camera.position.set(4, 4, 4);
 const cuboid = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 0.5), new THREE.MeshNormalMaterial());
 scene.add(cuboid);
 
-// --- NEW: Helper function to create text labels ---
-function createTextSprite(text, { fontsize = 32, fontface = 'Arial', textColor = { r: 255, g: 255, b: 255, a: 1.0 } }) {
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    context.font = `Bold ${fontsize}px ${fontface}`;
+// --- Axes helper: create arrow (solid or dashed) with arrow tip, no text labels ---
+function createAxis(parent, direction, color, length, dashed = false) {
+    const dir = new THREE.Vector3(...direction).normalize();
+    const start = new THREE.Vector3(0, 0, 0);
+    const end = dir.clone().multiplyScalar(length);
 
-    // Set background color
-    context.fillStyle = "rgba(0, 0, 0, 0.0)"; // Transparent background
-    context.fillRect(0, 0, canvas.width, canvas.height);
+    // Shaft
+    const shaftGeometry = new THREE.BufferGeometry().setFromPoints([start, end]);
+    let shaftMaterial;
+    if (dashed) {
+        shaftMaterial = new THREE.LineDashedMaterial({ color: color, dashSize: 0.2, gapSize: 0.1 });
+    } else {
+        shaftMaterial = new THREE.LineBasicMaterial({ color: color });
+    }
+    const shaft = new THREE.Line(shaftGeometry, shaftMaterial);
+    if (dashed) {
+        shaft.computeLineDistances();
+    }
+    parent.add(shaft);
 
-    // Set text color
-    context.fillStyle = `rgba(${textColor.r}, ${textColor.g}, ${textColor.b}, ${textColor.a})`;
-    context.fillText(text, 0, fontsize);
-
-    const texture = new THREE.Texture(canvas);
-    texture.needsUpdate = true;
-
-    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-    const sprite = new THREE.Sprite(spriteMaterial);
-    sprite.scale.set(2, 1, 1.0); // Adjust scale as needed
-    return sprite;
+    // Arrow tip
+    const headLength = 0.2;
+    const headRadius = 0.08;
+    const coneGeometry = new THREE.ConeGeometry(headRadius, headLength, 16);
+    coneGeometry.translate(0, headLength / 2, 0);
+    const coneMaterial = new THREE.MeshBasicMaterial({ color: color });
+    const cone = new THREE.Mesh(coneGeometry, coneMaterial);
+    const up = new THREE.Vector3(0, 1, 0);
+    cone.quaternion.setFromUnitVectors(up, dir);
+    cone.position.copy(end.clone().sub(dir.clone().multiplyScalar(headLength)));
+    parent.add(cone);
 }
 
-// --- NEW: Helper function to create a complete labeled axis ---
-function createLabeledAxis(parent, direction, color, length, labelText) {
-    const dir = new THREE.Vector3(...direction);
-    const origin = new THREE.Vector3(0, 0, 0);
-    const hex = color;
+// --- NEW: Create Inertial Frame Axes (solid) ---
+createAxis(scene, [1, 0, 0], 0xff0000, 5, false);
+createAxis(scene, [0, 1, 0], 0x00ff00, 5, false);
+createAxis(scene, [0, 0, 1], 0x0000ff, 5, false);
 
-    // Create arrow
-    const arrowHelper = new THREE.ArrowHelper(dir.normalize(), origin, length, hex, 0.2, 0.1);
-    parent.add(arrowHelper);
-
-    // Create label
-    const label = createTextSprite(labelText, { fontsize: 24 });
-    label.position.copy(dir.multiplyScalar(length * 1.1)); // Position label at the end of the arrow
-    parent.add(label);
-}
-
-// --- NEW: Create Inertial Frame Axes ---
-createLabeledAxis(scene, [1, 0, 0], 0xff0000, 5, 'X Inertial');
-createLabeledAxis(scene, [0, 1, 0], 0x00ff00, 5, 'Y Inertial');
-createLabeledAxis(scene, [0, 0, 1], 0x0000ff, 5, 'Z Inertial');
-
-// --- NEW: Create Body-Fixed Frame Axes ---
+// --- NEW: Create Body-Fixed Frame Axes (dashed) ---
 // We add these to the cuboid object itself, so they rotate with it.
-createLabeledAxis(cuboid, [1, 0, 0], 0xff0000, 3, 'x body');
-createLabeledAxis(cuboid, [0, 1, 0], 0x00ff00, 3, 'y body');
-createLabeledAxis(cuboid, [0, 0, 1], 0x0000ff, 3, 'z body');
+createAxis(cuboid, [1, 0, 0], 0xff0000, 3, true);
+createAxis(cuboid, [0, 1, 0], 0x00ff00, 3, true);
+createAxis(cuboid, [0, 0, 1], 0x0000ff, 3, true);
 
 
 // --- Plotly Charting Setup ---

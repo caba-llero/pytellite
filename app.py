@@ -10,8 +10,9 @@ import websockets
 from plant.plant import Plant
 
 # --- Configuration ---
-HTTP_PORT = 8000
-WEBSOCKET_PORT = 8765
+HTTP_PORT = int(os.getenv('PORT', 8000))
+WEBSOCKET_PORT = int(os.getenv('WEBSOCKET_PORT', 8765))
+HOST = os.getenv('HOST', '0.0.0.0')  # Use 0.0.0.0 for production
 
 # --- Frontend files are now served from the webapp directory ---
 
@@ -88,14 +89,14 @@ def run_http_server():
                 # Serve other static files normally
                 super().do_GET()
 
-    with socketserver.TCPServer(("", HTTP_PORT), CustomHandler) as httpd:
-        print(f"HTTP server started at http://localhost:{HTTP_PORT}")
+    with socketserver.TCPServer((HOST, HTTP_PORT), CustomHandler) as httpd:
+        print(f"HTTP server started at http://{HOST}:{HTTP_PORT}")
         print(f"Serving files from: {webapp_path}")
         httpd.serve_forever()
 
 async def main():
-    async with websockets.serve(calculation_and_update_server, "localhost", WEBSOCKET_PORT):
-        print(f"WebSocket server started at ws://localhost:{WEBSOCKET_PORT}")
+    async with websockets.serve(calculation_and_update_server, HOST, WEBSOCKET_PORT):
+        print(f"WebSocket server started at ws://{HOST}:{WEBSOCKET_PORT}")
         await asyncio.Future()
 
 if __name__ == "__main__":
@@ -103,7 +104,7 @@ if __name__ == "__main__":
     http_thread.daemon = True
     http_thread.start()
     print("Starting WebSocket server...")
-    print("Open your browser and navigate to http://localhost:8000")
+    print(f"Open your browser and navigate to http://{HOST}:{HTTP_PORT}")
     print("Press Ctrl+C to stop the servers.")
     try:
         asyncio.run(main())
