@@ -1,0 +1,57 @@
+body {
+    margin: 0;
+    background-color: #111;
+    color: white;
+    font-family: monospace;
+    overflow: hidden;
+}
+#container {
+    display: flex;
+    width: 100vw;
+    height: 100vh;
+}
+#main-vis {
+    flex: 2; /* 2/3 of the width */
+    position: relative;
+}
+#renderer-container {
+    width: 100%;
+    height: 100%;
+}
+#plots-container {
+    flex: 1; /* 1/3 of the width */
+    display: flex;
+    flex-direction: row; /* Now a row for two columns */
+    background-color: #1a1a1a;
+    padding: 10px;
+    box-sizing: border-box;
+}
+.plot-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    margin: 0 5px;
+}
+.plot-wrapper {
+    flex: 1;
+    min-height: 0;
+}
+#info {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: rgba(0,0,0,0.5);
+    padding: 10px;
+    border-radius: 5px;
+    z-index: 10;
+}
+#pauseButton {
+    width: 100%;
+    padding: 8px;
+    margin-top: 10px;
+    background-color: #ff6384;
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-family: monospace;
+}

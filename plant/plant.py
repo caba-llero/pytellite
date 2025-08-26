@@ -21,7 +21,7 @@ import yaml
 
 try:
     # Try relative imports (when run as module)
-    from .dynamics import rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_symplectic, orbit_to_inertial
+    from .dynamics import rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
     from .quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
 except ImportError:
     # Fall back to absolute imports (when imported by other scripts)
@@ -80,7 +80,7 @@ class Plant:
         # as it does not affect unforced attitude dynamics.
         # self.r_i, self.v_i, _ = rk4_step_orbit(self.r_i, self.v_i, self.dt_sim)
 
-        self.w_bi = integrate_ang_vel_symplectic(self.w_bi, self.J, self.L, self.dt_sim)
+        self.w_bi = integrate_ang_vel_rk4(self.w_bi, self.J, self.L, self.dt_sim)
         self.q_bi = integrate_attitude_quat_mult(self.q_bi, self.w_bi, self.dt_sim)
 
         self.t_sim += self.dt_sim

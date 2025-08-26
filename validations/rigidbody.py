@@ -32,7 +32,7 @@ def test_rigidbody_integration():
     dt = 0.1  # Time step [s]
     num_steps = 10000
     tolerance = 1e-1
-    integrator = 0 # 0 = symplectic, 1 = RK4
+    integrator = 1 # 0 = symplectic, 1 = RK4
 
     # Initial angular velocity 
     w0 = np.array([0.03, 0.02, 0.1])  # [rad/s]
@@ -123,7 +123,7 @@ def test_rigidbody_integration():
     plt.xlabel('Time [s]')
     plt.suptitle('Symplectic Integration of Axisymmetric Body')
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig('symplectic_integration_test.png')
+    plt.show()
     print("\nGenerated plot: symplectic_integration_test.png")
 
 if __name__ == "__main__":

@@ -25,14 +25,17 @@ from plant.plant import Plant
 
 plant = Plant('plant/config_default.yaml')
 
+w_x_history = []
+w_y_history = []
 w_z_history = []
 w_t_history = []
 w_norm_history = []
 h_norm_history = []
 
-for _ in range(1000):
+for _ in range(10000):
     euler_angles, angular_velocity = plant.update()
-    
+    w_x_history.append(angular_velocity[0])
+    w_y_history.append(angular_velocity[1])
     w_z_history.append(angular_velocity[2])
     w_t_history.append(np.linalg.norm(angular_velocity[:2]))
     w_norm_history.append(np.linalg.norm(angular_velocity))
@@ -40,10 +43,12 @@ for _ in range(1000):
 
 
 fig, ax = plt.subplots()
+ax.plot(w_x_history)
+ax.plot(w_y_history)
 ax.plot(w_z_history)
 ax.plot(w_t_history)
 ax.plot(w_norm_history)
-ax.legend(['w_z', 'w_t', 'w_norm'])
+ax.legend(['w_x', 'w_y', 'w_z', 'w_t', 'w_norm'])
 
 fig, ax = plt.subplots()
 ax.plot(h_norm_history)

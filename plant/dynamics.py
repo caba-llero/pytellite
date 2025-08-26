@@ -8,6 +8,9 @@ except ImportError:
     from quaternion_math import Quaternion
 from numpy.linalg import inv, solve
 
+from scipy.integrate import solve_ivp
+
+
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
 
 
