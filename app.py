@@ -1,29 +1,19 @@
 import asyncio
 import json
-import math
+import http
 import os
-import time
-import http.server
-import socket
 import websockets
 from plant.plant import Plant
-try:
-    from websockets.http import Response, Headers  # websockets >= 12
-except Exception:
-    Response = None
-    Headers = None
+from websockets.http import Response, Headers
+from websockets.server import WebSocketServerProtocol
 
 # --- Configuration ---
-HTTP_PORT = int(os.getenv('PORT', 8000))
-HOST = os.getenv('HOST', '0.0.0.0')  # Use 0.0.0.0 for production
+HTTP_PORT = int(os.getenv('PORT', 8080)) # Use 8080 as a common default for web services
+HOST = os.getenv('HOST', '0.0.0.0')
 
-# --- Frontend files are now served from the webapp directory ---
-
-# --- Python Backend ---
-
-
-# CORRECTED: The WebSocket handler now correctly manages the connection state.
-async def calculation_and_update_server(websocket):
+# --- WebSocket Handler ---
+# I've slightly improved the loop condition in the sender.
+async def calculation_and_update_server(websocket: WebSocketServerProtocol):
     print("Client connected.")
     is_paused = False
     
@@ -43,15 +33,14 @@ async def calculation_and_update_server(websocket):
 
     async def sender():
         plant = Plant('plant/config_default.yaml')
-        # CORRECTED LINE: Changed `while websocket.open` to `while True`
-        while True:
+        # Using websocket.open is a cleaner way to handle the connection lifecycle.
+        while websocket.open:
             if not is_paused:
                 euler_angles, angular_velocity = plant.update()
                 data = {
                     "roll": euler_angles[0], "pitch": euler_angles[1], "yaw": euler_angles[2],
                     "p": angular_velocity[0], "q": angular_velocity[1], "r": angular_velocity[2]
                 }
-                # This will raise ConnectionClosed when the client disconnects
                 await websocket.send(json.dumps(data))
             
             await asyncio.sleep(plant.dt_sim)
@@ -63,6 +52,7 @@ async def calculation_and_update_server(websocket):
     except Exception as e:
         print(f"An error occurred: {e}")
 
+# --- Helper for Static Files ---
 def _guess_mime_type(path: str) -> str:
     if path.endswith('.html'):
         return 'text/html; charset=utf-8'
@@ -80,101 +70,59 @@ def _guess_mime_type(path: str) -> str:
         return 'image/svg+xml'
     return 'application/octet-stream'
 
-
-def _serve_static_request(path: str):
+# --- Simplified Static File Server ---
+# This function now always returns a websockets.http.Response object.
+def _serve_static_file(path: str) -> Response:
     webapp_path = os.path.join(os.path.dirname(__file__), 'webapp')
-
-    # Health check
-    if path == '/healthz':
-        body = b"ok"
-        status = int(http.HTTPStatus.OK)
-        headers = [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))]
-        if Response is not None:
-            try:
-                return Response(status, headers, body)
-            except TypeError:
-                if Headers is not None:
-                    return Response(status, Headers(headers), body)
-        return (http.HTTPStatus.OK, headers, body)
 
     if path == '/':
         path = '/index.html'
 
-    # Prevent directory traversal
-    requested = os.path.normpath(path.lstrip('/'))
-    full_path = os.path.join(webapp_path, requested)
-    full_path = os.path.normpath(full_path)
-    if not full_path.startswith(os.path.normpath(webapp_path)):
-        body = b"Forbidden"
-        status = int(http.HTTPStatus.FORBIDDEN)
-        headers = [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))]
-        if Response is not None:
-            try:
-                return Response(status, headers, body)
-            except TypeError:
-                if Headers is not None:
-                    return Response(status, Headers(headers), body)
-        return (http.HTTPStatus.FORBIDDEN, headers, body)
+    # Prevent directory traversal attacks
+    requested_path = os.path.normpath(path.lstrip('/'))
+    full_path = os.path.join(webapp_path, requested_path)
+
+    if not os.path.normpath(full_path).startswith(os.path.normpath(webapp_path)):
+        return Response(
+            status=http.HTTPStatus.FORBIDDEN,
+            headers=Headers({"Content-Type": "text/plain"}),
+            body=b"Forbidden"
+        )
 
     try:
         with open(full_path, 'rb') as f:
             body = f.read()
-        headers = [
-            ("Content-Type", _guess_mime_type(full_path)),
-            ("Content-Length", str(len(body))),
-        ]
-        status = int(http.HTTPStatus.OK)
-        if Response is not None:
-            try:
-                return Response(status, headers, body)
-            except TypeError:
-                if Headers is not None:
-                    return Response(status, Headers(headers), body)
-        return (http.HTTPStatus.OK, headers, body)
+        headers = Headers({
+            "Content-Type": _guess_mime_type(full_path),
+            "Content-Length": str(len(body)),
+        })
+        return Response(status=http.HTTPStatus.OK, headers=headers, body=body)
     except FileNotFoundError:
-        body = b"Not Found"
-        status = int(http.HTTPStatus.NOT_FOUND)
-        headers = [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))]
-        if Response is not None:
-            try:
-                return Response(status, headers, body)
-            except TypeError:
-                if Headers is not None:
-                    return Response(status, Headers(headers), body)
-        return (http.HTTPStatus.NOT_FOUND, headers, body)
+        return Response(
+            status=http.HTTPStatus.NOT_FOUND,
+            headers=Headers({"Content-Type": "text/plain"}),
+            body=b"Not Found"
+        )
+
+# --- Simplified Main Server Logic ---
+# This request processor is much simpler and directly uses the modern API.
+async def process_request(path: str, request_headers: Headers):
+    # Health check endpoint
+    if path == '/healthz':
+        return Response(
+            status=http.HTTPStatus.OK,
+            headers=Headers({"Content-Type": "text/plain"}),
+            body=b"ok"
+        )
+
+    # If it's a regular HTTP request, serve a static file.
+    if "Upgrade" not in request_headers or request_headers["Upgrade"].lower() != "websocket":
+        return _serve_static_file(path)
+    
+    # Otherwise, it's a WebSocket upgrade request. Return None to proceed.
+    return None
 
 async def main():
-    # Serve both HTTP (static files + /healthz) and WebSocket on the SAME port
-    async def process_request(arg1, arg2):
-        # Support both old (path, headers) and new (connection, request) signatures
-        try:
-            if isinstance(arg1, str):
-                path = arg1
-                headers = arg2 or {}
-            else:
-                # Newer websockets: (connection, request)
-                request = arg2
-                path = getattr(request, 'path', '/')
-                headers = getattr(request, 'headers', {})
-
-            upgrade_hdr = ''
-            if hasattr(headers, 'get'):
-                upgrade_hdr = headers.get('Upgrade', headers.get('upgrade', ''))
-            else:
-                upgrade_hdr = ''
-
-            if isinstance(upgrade_hdr, (bytes, bytearray)):
-                upgrade_hdr = upgrade_hdr.decode('latin-1', errors='ignore')
-
-            # If this is a normal HTTP request (not a WS upgrade), serve static
-            if (upgrade_hdr or '').lower() != 'websocket':
-                return _serve_static_request(path)
-            # Otherwise, proceed with WebSocket handshake (return None)
-            return None
-        except Exception:
-            # On any unexpected error during detection, fall back to serving static
-            return _serve_static_request('/')
-
     print(f"Starting unified HTTP+WebSocket server on {HOST}:{HTTP_PORT}")
     async with websockets.serve(
         calculation_and_update_server,
@@ -191,5 +139,3 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nServer stopped.")
-
-    
