@@ -6,6 +6,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from plant.plant import Plant
 
+# Ensure logs directory exists
+os.makedirs("logs", exist_ok=True)
+
 app = FastAPI()
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "web")
 app.mount("/static", StaticFiles(directory=STATIC_DIR, html=True), name="static")
@@ -64,6 +67,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    print("Open your browser and navigate to http://localhost:8000")
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    # Get port from environment variable (Render sets this)
+    port = int(os.environ.get("PORT", 8000))
+    # Bind to 0.0.0.0 for Render deployment, localhost for local development
+    host = "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1"
+
+    print(f"Starting server on {host}:{port}")
+    if not os.environ.get("RENDER"):
+        print("Open your browser and navigate to http://localhost:8000")
+
+    uvicorn.run("app:app", host=host, port=port, reload=not bool(os.environ.get("RENDER")))
     
