@@ -6,3 +6,8 @@ pytest>=7.4
 matplotlib>=3.0
 websockets>=15.0,<16
 
+# Web service stack for Render
+fastapi>=0.110
+uvicorn[standard]>=0.24
+aiofiles>=23.2
+

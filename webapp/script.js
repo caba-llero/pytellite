@@ -86,9 +86,9 @@ createPlotlyChart('qPlot', 'Pitch Rate', '#9966ff', [-5, 5]);
 createPlotlyChart('rPlot', 'Yaw Rate', '#c9cbcf', [-5, 5]);
 
 // --- WebSocket & Controls ---
-// Connect to the same host that served this page, using the same port as HTTP
+// Connect to the same host, using a dedicated /ws path handled by the server
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const socket = new WebSocket(`${protocol}//${window.location.host}`);
+const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
 let timeTick = 0;
 
 pauseButton.addEventListener('click', () => {
