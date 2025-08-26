@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from plant.plant import Plant
@@ -16,6 +16,14 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR, html=True), name="static"
 @app.get("/")
 async def serve_index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+@app.head("/")
+async def serve_index_head():
+    return Response(status_code=200)
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
 
 
 @app.websocket("/ws")
@@ -68,8 +76,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    # This block is now only for local development
-    print("Starting server in development mode...")
-    print("Open your browser and navigate to http://127.0.0.1:8000")
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    # Bind to 0.0.0.0 and the provided PORT on Render; use localhost in dev
+    port = int(os.getenv("PORT", "8000"))
+    on_render = os.getenv("PORT") is not None
+    host = "0.0.0.0" if on_render else "127.0.0.1"
+    reload = False if on_render else True
+    if on_render:
+        print(f"Starting server for Render on {host}:{port}")
+    else:
+        print("Starting server in development mode...")
+        print(f"Open your browser and navigate to http://{host}:{port}")
+    uvicorn.run("app:app", host=host, port=port, reload=reload)
     
