@@ -12,7 +12,6 @@ from plant.plant import Plant
 
 # --- Configuration ---
 HTTP_PORT = int(os.getenv('PORT', 8000))
-WEBSOCKET_PORT = int(os.getenv('WEBSOCKET_PORT', 8765))
 HOST = os.getenv('HOST', '0.0.0.0')  # Use 0.0.0.0 for production
 
 # --- Frontend files are now served from the webapp directory ---
@@ -83,9 +82,7 @@ def run_http_server():
                     with open(os.path.join(webapp_path, 'index.html'), 'r', encoding='utf-8') as f:
                         content = f.read()
 
-                    # Inject the WebSocket port into the HTML
-                    content = content.replace('window.WEBSOCKET_PORT = 8765;',
-                                            f'window.WEBSOCKET_PORT = {WEBSOCKET_PORT};')
+                    # WebSocket now uses the same port as HTTP, no injection needed
 
                     self.send_response(200)
                     self.send_header("Content-type", "text/html")
@@ -123,8 +120,8 @@ def run_http_server():
         httpd.serve_forever()
 
 async def main():
-    async with websockets.serve(calculation_and_update_server, HOST, WEBSOCKET_PORT):
-        print(f"WebSocket server started at ws://{HOST}:{WEBSOCKET_PORT}")
+    async with websockets.serve(calculation_and_update_server, HOST, HTTP_PORT):
+        print(f"WebSocket server started at ws://{HOST}:{HTTP_PORT}")
         await asyncio.Future()
 
 if __name__ == "__main__":
