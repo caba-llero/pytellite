@@ -4,9 +4,7 @@ import math
 import os
 import time
 import http.server
-import socketserver
 import socket
-import threading
 import websockets
 from plant.plant import Plant
 
@@ -60,80 +58,92 @@ async def calculation_and_update_server(websocket):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-def run_http_server():
+def _guess_mime_type(path: str) -> str:
+    if path.endswith('.html'):
+        return 'text/html; charset=utf-8'
+    if path.endswith('.js'):
+        return 'application/javascript; charset=utf-8'
+    if path.endswith('.css'):
+        return 'text/css; charset=utf-8'
+    if path.endswith('.json'):
+        return 'application/json; charset=utf-8'
+    if path.endswith('.png'):
+        return 'image/png'
+    if path.endswith('.jpg') or path.endswith('.jpeg'):
+        return 'image/jpeg'
+    if path.endswith('.svg'):
+        return 'image/svg+xml'
+    return 'application/octet-stream'
+
+
+def _serve_static_request(path: str):
     webapp_path = os.path.join(os.path.dirname(__file__), 'webapp')
 
-    class CustomHandler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=webapp_path, **kwargs)
+    # Health check
+    if path == '/healthz':
+        body = b"ok"
+        return (
+            http.HTTPStatus.OK,
+            [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))],
+            body,
+        )
 
-        def do_GET(self):
-            # Lightweight health check endpoint for Railway
-            if self.path == '/healthz':
-                self.send_response(200)
-                self.send_header("Content-type", "text/plain")
-                self.end_headers()
-                self.wfile.write(b"ok")
-                return
-            # Handle index.html specially to inject the WebSocket port
-            if self.path == '/' or self.path == '/index.html':
-                self.path = '/index.html'
-                try:
-                    with open(os.path.join(webapp_path, 'index.html'), 'r', encoding='utf-8') as f:
-                        content = f.read()
+    if path == '/':
+        path = '/index.html'
 
-                    # WebSocket now uses the same port as HTTP, no injection needed
+    # Prevent directory traversal
+    requested = os.path.normpath(path.lstrip('/'))
+    full_path = os.path.join(webapp_path, requested)
+    full_path = os.path.normpath(full_path)
+    if not full_path.startswith(os.path.normpath(webapp_path)):
+        body = b"Forbidden"
+        return (
+            http.HTTPStatus.FORBIDDEN,
+            [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))],
+            body,
+        )
 
-                    self.send_response(200)
-                    self.send_header("Content-type", "text/html")
-                    self.end_headers()
-                    self.wfile.write(content.encode('utf-8'))
-                except FileNotFoundError:
-                    self.send_error(404, "File not found")
-            else:
-                # Serve other static files normally
-                super().do_GET()
-
-    # Prefer IPv6 dual-stack binding to satisfy Railway v2 healthchecks
     try:
-        class DualStackServer(socketserver.TCPServer):
-            address_family = socket.AF_INET6
-            allow_reuse_address = True
-            def server_bind(self):
-                if hasattr(socket, 'IPV6_V6ONLY'):
-                    try:
-                        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-                    except OSError:
-                        pass
-                super().server_bind()
-
-        server = DualStackServer(('::', HTTP_PORT), CustomHandler)
-        bound_host = '::'
-    except Exception as e:
-        print(f"IPv6 dual-stack bind failed ({e}); falling back to IPv4")
-        server = socketserver.TCPServer((HOST, HTTP_PORT), CustomHandler)
-        bound_host = HOST
-
-    with server as httpd:
-        print(f"HTTP server started at http://{bound_host}:{HTTP_PORT}")
-        print(f"Serving files from: {webapp_path}")
-        httpd.serve_forever()
+        with open(full_path, 'rb') as f:
+            body = f.read()
+        headers = [
+            ("Content-Type", _guess_mime_type(full_path)),
+            ("Content-Length", str(len(body))),
+        ]
+        return (http.HTTPStatus.OK, headers, body)
+    except FileNotFoundError:
+        body = b"Not Found"
+        return (
+            http.HTTPStatus.NOT_FOUND,
+            [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))],
+            body,
+        )
 
 async def main():
-    async with websockets.serve(calculation_and_update_server, HOST, HTTP_PORT):
-        print(f"WebSocket server started at ws://{HOST}:{HTTP_PORT}")
+    # Serve both HTTP (static files + /healthz) and WebSocket on the SAME port
+    async def process_request(path, request_headers):
+        # If this is a normal HTTP request (not a WS upgrade), serve static
+        upgrade_hdr = request_headers.get('Upgrade', '')
+        if upgrade_hdr.lower() != 'websocket':
+            return _serve_static_request(path)
+        # Otherwise, proceed with WebSocket handshake (return None)
+        return None
+
+    print(f"Starting unified HTTP+WebSocket server on {HOST}:{HTTP_PORT}")
+    async with websockets.serve(
+        calculation_and_update_server,
+        HOST,
+        HTTP_PORT,
+        process_request=process_request,
+    ):
         await asyncio.Future()
 
 if __name__ == "__main__":
-    http_thread = threading.Thread(target=run_http_server)
-    http_thread.daemon = True
-    http_thread.start()
-    print("Starting WebSocket server...")
     print(f"Open your browser and navigate to http://{HOST}:{HTTP_PORT}")
-    print("Press Ctrl+C to stop the servers.")
+    print("Press Ctrl+C to stop the server.")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\nServers stopped.")
+        print("\nServer stopped.")
 
     
