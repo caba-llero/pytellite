@@ -8,14 +8,14 @@ import json
 import http
 import os
 from plant.plant import Plant
-# NO MORE 'Response' or 'Headers' imports are needed.
+# No special websockets imports are needed.
 
 # --- CONFIGURATION ---
 HTTP_PORT = int(os.getenv('PORT', 8080))
 HOST = os.getenv('HOST', '0.0.0.0')
 
 # --- WEBSOCKET HANDLER ---
-# (This part of your code is fine and does not need changes)
+# (This part of your code is fine)
 async def calculation_and_update_server(websocket):
     print("Client connected.")
     is_paused = False
@@ -66,41 +66,44 @@ def _guess_mime_type(path: str) -> str:
     return 'application/octet-stream'
 
 # --- MAIN SERVER LOGIC ---
-# This version returns tuples: (status_code, headers, body)
-# This is the stable, long-term supported API for websockets.
-async def process_request(path: str, request_headers):
+# CORRECTED: The second argument is a Request object. We access its .headers attribute.
+async def process_request(path: str, request_object):
+    # Get the actual headers from the Request object
+    headers = request_object.headers
+
     # Health check endpoint
     if path == '/healthz':
-        headers = [("Content-Type", "text/plain")]
-        return http.HTTPStatus.OK, headers, b"ok"
+        response_headers = [("Content-Type", "text/plain")]
+        return http.HTTPStatus.OK, response_headers, b"ok"
 
-    # This is a regular HTTP request, so we serve a static file.
-    if "Upgrade" not in request_headers or request_headers["Upgrade"].lower() != "websocket":
-        webapp_path = os.path.join(os.path.dirname(__file__), 'webapp')
-        if path == '/':
-            path = '/index.html'
-        
-        requested_path = os.path.normpath(path.lstrip('/'))
-        full_path = os.path.join(webapp_path, requested_path)
+    # Check if this is a WebSocket upgrade request.
+    if "Upgrade" in headers and headers["Upgrade"].lower() == "websocket":
+        # Returning None lets the WebSocket handshake proceed.
+        return None
 
-        if not os.path.normpath(full_path).startswith(os.path.normpath(webapp_path)):
-            return http.HTTPStatus.FORBIDDEN, [], b"Forbidden"
+    # If not a WebSocket, it's a regular HTTP request, so we serve a static file.
+    webapp_path = os.path.join(os.path.dirname(__file__), 'webapp')
+    if path == '/':
+        path = '/index.html'
+    
+    requested_path = os.path.normpath(path.lstrip('/'))
+    full_path = os.path.join(webapp_path, requested_path)
 
-        try:
-            with open(full_path, 'rb') as f:
-                body = f.read()
-            headers = [
-                ("Content-Type", _guess_mime_type(full_path)),
-                ("Content-Length", str(len(body))),
-            ]
-            return http.HTTPStatus.OK, headers, body
-        except (FileNotFoundError, IsADirectoryError):
-            headers = [("Content-Type", "text/plain")]
-            return http.HTTPStatus.NOT_FOUND, headers, b"Not Found"
+    if not os.path.normpath(full_path).startswith(os.path.normpath(webapp_path)):
+        return http.HTTPStatus.FORBIDDEN, [], b"Forbidden"
 
-    # If we get here, it's a WebSocket upgrade request.
-    # Returning None lets the WebSocket handshake proceed.
-    return None
+    try:
+        with open(full_path, 'rb') as f:
+            body = f.read()
+        response_headers = [
+            ("Content-Type", _guess_mime_type(full_path)),
+            ("Content-Length", str(len(body))),
+        ]
+        return http.HTTPStatus.OK, response_headers, body
+    except (FileNotFoundError, IsADirectoryError):
+        response_headers = [("Content-Type", "text/plain")]
+        return http.HTTPStatus.NOT_FOUND, response_headers, b"Not Found"
+
 
 async def main():
     print(f"Starting unified HTTP+WebSocket server on {HOST}:{HTTP_PORT}")
