@@ -7,6 +7,11 @@ import http.server
 import socket
 import websockets
 from plant.plant import Plant
+try:
+    from websockets.http import Response, Headers  # websockets >= 12
+except Exception:
+    Response = None
+    Headers = None
 
 # --- Configuration ---
 HTTP_PORT = int(os.getenv('PORT', 8000))
@@ -82,11 +87,15 @@ def _serve_static_request(path: str):
     # Health check
     if path == '/healthz':
         body = b"ok"
-        return (
-            http.HTTPStatus.OK,
-            [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))],
-            body,
-        )
+        status = int(http.HTTPStatus.OK)
+        headers = [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))]
+        if Response is not None:
+            try:
+                return Response(status, headers, body)
+            except TypeError:
+                if Headers is not None:
+                    return Response(status, Headers(headers), body)
+        return (http.HTTPStatus.OK, headers, body)
 
     if path == '/':
         path = '/index.html'
@@ -97,11 +106,15 @@ def _serve_static_request(path: str):
     full_path = os.path.normpath(full_path)
     if not full_path.startswith(os.path.normpath(webapp_path)):
         body = b"Forbidden"
-        return (
-            http.HTTPStatus.FORBIDDEN,
-            [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))],
-            body,
-        )
+        status = int(http.HTTPStatus.FORBIDDEN)
+        headers = [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))]
+        if Response is not None:
+            try:
+                return Response(status, headers, body)
+            except TypeError:
+                if Headers is not None:
+                    return Response(status, Headers(headers), body)
+        return (http.HTTPStatus.FORBIDDEN, headers, body)
 
     try:
         with open(full_path, 'rb') as f:
@@ -110,14 +123,25 @@ def _serve_static_request(path: str):
             ("Content-Type", _guess_mime_type(full_path)),
             ("Content-Length", str(len(body))),
         ]
+        status = int(http.HTTPStatus.OK)
+        if Response is not None:
+            try:
+                return Response(status, headers, body)
+            except TypeError:
+                if Headers is not None:
+                    return Response(status, Headers(headers), body)
         return (http.HTTPStatus.OK, headers, body)
     except FileNotFoundError:
         body = b"Not Found"
-        return (
-            http.HTTPStatus.NOT_FOUND,
-            [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))],
-            body,
-        )
+        status = int(http.HTTPStatus.NOT_FOUND)
+        headers = [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))]
+        if Response is not None:
+            try:
+                return Response(status, headers, body)
+            except TypeError:
+                if Headers is not None:
+                    return Response(status, Headers(headers), body)
+        return (http.HTTPStatus.NOT_FOUND, headers, body)
 
 async def main():
     # Serve both HTTP (static files + /healthz) and WebSocket on the SAME port
