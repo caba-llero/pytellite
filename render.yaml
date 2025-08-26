@@ -3,7 +3,7 @@ services:
     name: satellite-simulator
     runtime: python3
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11

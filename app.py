@@ -65,16 +65,11 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"An error occurred: {e}")
 
+
 if __name__ == "__main__":
     import uvicorn
-    # Get port from environment variable (Render sets this)
-    port = int(os.environ.get("PORT", 8000))
-    # Bind to 0.0.0.0 for Render deployment, localhost for local development
-    host = "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1"
-
-    print(f"Starting server on {host}:{port}")
-    if not os.environ.get("RENDER"):
-        print("Open your browser and navigate to http://localhost:8000")
-
-    uvicorn.run("app:app", host=host, port=port, reload=not bool(os.environ.get("RENDER")))
+    # This block is now only for local development
+    print("Starting server in development mode...")
+    print("Open your browser and navigate to http://127.0.0.1:8000")
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
     
