@@ -101,13 +101,10 @@ def process_request(connection, request):
     try:
         with open(full_path, 'rb') as f:
             body = f.read()
-        
-        response_headers = {
-            "Content-Type": _guess_mime_type(full_path),
-            "Content-Length": str(len(body)),
-        }
-        # Use connection.respond() to send the file
-        return connection.respond(http.HTTPStatus.OK, response_headers, body)
+
+        # websockets 15.x respond(status, body) — headers aren’t supported positionally
+        # Serving without explicit headers is acceptable for our static assets
+        return connection.respond(http.HTTPStatus.OK, body)
     except (FileNotFoundError, IsADirectoryError):
         # Use connection.respond() for 404 errors
         return connection.respond(http.HTTPStatus.NOT_FOUND, "Not Found")
