@@ -59,18 +59,18 @@ def _guess_mime_type(path: str) -> str:
     if path.endswith('.html'): return 'text/html; charset=utf-8'
     if path.endswith('.js'): return 'application/javascript; charset=utf-8'
     if path.endswith('.css'): return 'text/css; charset=utf-8'
-    if path.endswith('.json'): return 'application/json; charset=-8'
+    if path.endswith('.json'): return 'application/json; charset=utf-8'
     if path.endswith('.png'): return 'image/png'
     if path.endswith('.jpg') or path.endswith('.jpeg'): return 'image/jpeg'
     if path.endswith('.svg'): return 'image/svg+xml'
     return 'application/octet-stream'
 
 # --- MAIN SERVER LOGIC ---
-# FINAL CORRECTION: The function signature must accept two arguments as shown in the traceback.
-async def process_request(protocol, request):
-    # Get the path and headers from the first argument (the protocol object).
-    path = protocol.path
-    headers = protocol.request_headers
+# FIXED: Updated function signature for websockets 15.0.1
+async def process_request(connection, request):
+    # Get the path and headers from the request object (second argument).
+    path = request.path
+    headers = request.headers
 
     # Health check endpoint
     if path == '/healthz':
