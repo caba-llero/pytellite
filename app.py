@@ -121,9 +121,9 @@ def _serve_static_request(path: str):
 
 async def main():
     # Serve both HTTP (static files + /healthz) and WebSocket on the SAME port
-    async def process_request(path, request_headers):
+    async def process_request(path, request):
         # If this is a normal HTTP request (not a WS upgrade), serve static
-        upgrade_hdr = request_headers.get('Upgrade', '')
+        upgrade_hdr = request.headers.get('Upgrade', '')
         if upgrade_hdr.lower() != 'websocket':
             return _serve_static_request(path)
         # Otherwise, proceed with WebSocket handshake (return None)
