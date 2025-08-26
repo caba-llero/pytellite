@@ -5,6 +5,7 @@ import os
 import time
 import http.server
 import socketserver
+import socket
 import threading
 import websockets
 from plant.plant import Plant
@@ -68,6 +69,13 @@ def run_http_server():
             super().__init__(*args, directory=webapp_path, **kwargs)
 
         def do_GET(self):
+            # Lightweight health check endpoint for Railway
+            if self.path == '/healthz':
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
             # Handle index.html specially to inject the WebSocket port
             if self.path == '/' or self.path == '/index.html':
                 self.path = '/index.html'
@@ -89,8 +97,28 @@ def run_http_server():
                 # Serve other static files normally
                 super().do_GET()
 
-    with socketserver.TCPServer((HOST, HTTP_PORT), CustomHandler) as httpd:
-        print(f"HTTP server started at http://{HOST}:{HTTP_PORT}")
+    # Prefer IPv6 dual-stack binding to satisfy Railway v2 healthchecks
+    try:
+        class DualStackServer(socketserver.TCPServer):
+            address_family = socket.AF_INET6
+            allow_reuse_address = True
+            def server_bind(self):
+                if hasattr(socket, 'IPV6_V6ONLY'):
+                    try:
+                        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+                    except OSError:
+                        pass
+                super().server_bind()
+
+        server = DualStackServer(('::', HTTP_PORT), CustomHandler)
+        bound_host = '::'
+    except Exception as e:
+        print(f"IPv6 dual-stack bind failed ({e}); falling back to IPv4")
+        server = socketserver.TCPServer((HOST, HTTP_PORT), CustomHandler)
+        bound_host = HOST
+
+    with server as httpd:
+        print(f"HTTP server started at http://{bound_host}:{HTTP_PORT}")
         print(f"Serving files from: {webapp_path}")
         httpd.serve_forever()
 
