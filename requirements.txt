@@ -5,3 +5,5 @@ spiceypy>=5.1.2
 pytest>=7.4
 matplotlib>=3.0
 
+fastapi>=0.111
+uvicorn[standard]>=0.30

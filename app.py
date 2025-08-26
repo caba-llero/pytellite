@@ -1,31 +1,33 @@
 import asyncio
 import json
-import math
 import os
-import time
-import http.server
-import socketserver
-import threading
-import websockets
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from plant.plant import Plant
 
-# --- Configuration ---
-HTTP_PORT = 8000
-WEBSOCKET_PORT = 8765
+app = FastAPI()
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "web")
+app.mount("/static", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
-# --- Frontend files are now served from the webapp directory ---
+@app.get("/")
+async def serve_index():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
-# --- Python Backend ---
 
-
-# CORRECTED: The WebSocket handler now correctly manages the connection state.
-async def calculation_and_update_server(websocket):
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
     print("Client connected.")
     is_paused = False
-    
+
     async def receiver():
         nonlocal is_paused
-        async for message in websocket:
+        while True:
+            try:
+                message = await websocket.receive_text()
+            except WebSocketDisconnect:
+                raise
             try:
                 command = json.loads(message)
                 if command.get("command") == "pause":
@@ -39,75 +41,29 @@ async def calculation_and_update_server(websocket):
 
     async def sender():
         plant = Plant('plant/config_default.yaml')
-        # CORRECTED LINE: Changed `while websocket.open` to `while True`
         while True:
             if not is_paused:
                 euler_angles, angular_velocity = plant.update()
                 data = {
-                    "roll": euler_angles[0], "pitch": euler_angles[1], "yaw": euler_angles[2],
-                    "p": angular_velocity[0], "q": angular_velocity[1], "r": angular_velocity[2]
+                    "roll": euler_angles[0],
+                    "pitch": euler_angles[1],
+                    "yaw": euler_angles[2],
+                    "p": angular_velocity[0],
+                    "q": angular_velocity[1],
+                    "r": angular_velocity[2],
                 }
-                # This will raise ConnectionClosed when the client disconnects
-                await websocket.send(json.dumps(data))
-            
+                await websocket.send_text(json.dumps(data))
             await asyncio.sleep(plant.dt_sim)
 
     try:
         await asyncio.gather(receiver(), sender())
-    except websockets.exceptions.ConnectionClosed:
+    except WebSocketDisconnect:
         print("Client disconnected.")
     except Exception as e:
         print(f"An error occurred: {e}")
 
-def run_http_server():
-    webapp_path = os.path.join(os.path.dirname(__file__), 'webapp')
-
-    class CustomHandler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=webapp_path, **kwargs)
-
-        def do_GET(self):
-            # Handle index.html specially to inject the WebSocket port
-            if self.path == '/' or self.path == '/index.html':
-                self.path = '/index.html'
-                try:
-                    with open(os.path.join(webapp_path, 'index.html'), 'r', encoding='utf-8') as f:
-                        content = f.read()
-
-                    # Inject the WebSocket port into the HTML
-                    content = content.replace('window.WEBSOCKET_PORT = 8765;',
-                                            f'window.WEBSOCKET_PORT = {WEBSOCKET_PORT};')
-
-                    self.send_response(200)
-                    self.send_header("Content-type", "text/html")
-                    self.end_headers()
-                    self.wfile.write(content.encode('utf-8'))
-                except FileNotFoundError:
-                    self.send_error(404, "File not found")
-            else:
-                # Serve other static files normally
-                super().do_GET()
-
-    with socketserver.TCPServer(("", HTTP_PORT), CustomHandler) as httpd:
-        print(f"HTTP server started at http://localhost:{HTTP_PORT}")
-        print(f"Serving files from: {webapp_path}")
-        httpd.serve_forever()
-
-async def main():
-    async with websockets.serve(calculation_and_update_server, "localhost", WEBSOCKET_PORT):
-        print(f"WebSocket server started at ws://localhost:{WEBSOCKET_PORT}")
-        await asyncio.Future()
-
 if __name__ == "__main__":
-    http_thread = threading.Thread(target=run_http_server)
-    http_thread.daemon = True
-    http_thread.start()
-    print("Starting WebSocket server...")
+    import uvicorn
     print("Open your browser and navigate to http://localhost:8000")
-    print("Press Ctrl+C to stop the servers.")
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nServers stopped.")
-
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
     

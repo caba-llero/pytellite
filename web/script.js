@@ -92,9 +92,10 @@ createPlotlyChart('qPlot', 'Pitch Rate', '#9966ff', [-5, 5]);
 createPlotlyChart('rPlot', 'Yaw Rate', '#c9cbcf', [-5, 5]);
 
 // --- WebSocket & Controls ---
-// Get the WebSocket port from the global variable set by the server
-const WEBSOCKET_PORT = window.WEBSOCKET_PORT || 8765;
-const socket = new WebSocket(`ws://localhost:${WEBSOCKET_PORT}`);
+// Build dynamic WebSocket URL based on current page location
+const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const wsHost = window.location.host; // includes hostname:port
+const socket = new WebSocket(`${wsScheme}://${wsHost}/ws`);
 let timeTick = 0;
 
 pauseButton.addEventListener('click', () => {
