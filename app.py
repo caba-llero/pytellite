@@ -66,10 +66,12 @@ def _guess_mime_type(path: str) -> str:
     return 'application/octet-stream'
 
 # --- MAIN SERVER LOGIC ---
-# CORRECTED: The second argument is a Request object. We access its .headers attribute.
-async def process_request(path: str, request_object):
-    # Get the actual headers from the Request object
-    headers = request_object.headers
+# FINAL CORRECTION: The function receives a single 'protocol' object.
+# We extract the path and headers from this object.
+async def process_request(protocol):
+    # Get the path and headers from the protocol object.
+    path = protocol.path
+    headers = protocol.request_headers
 
     # Health check endpoint
     if path == '/healthz':
