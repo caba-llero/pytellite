@@ -3,6 +3,8 @@ import json
 import http
 import os
 import websockets
+print(f"--- DIAGNOSTIC: websockets version installed is {websockets.__version__} ---")
+
 from plant.plant import Plant
 from websockets.http import Response, Headers
 from websockets.server import WebSocketServerProtocol
