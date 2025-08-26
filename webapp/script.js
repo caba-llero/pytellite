@@ -86,9 +86,10 @@ createPlotlyChart('qPlot', 'Pitch Rate', '#9966ff', [-5, 5]);
 createPlotlyChart('rPlot', 'Yaw Rate', '#c9cbcf', [-5, 5]);
 
 // --- WebSocket & Controls ---
-// Connect to the same host, using a dedicated /ws path handled by the server
-const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+// Build dynamic WebSocket URL based on current page location
+const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const wsHost = window.location.host; // includes hostname:port
+const socket = new WebSocket(`${wsScheme}://${wsHost}/ws`);
 let timeTick = 0;
 
 pauseButton.addEventListener('click', () => {

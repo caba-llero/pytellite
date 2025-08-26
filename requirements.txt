@@ -1,7 +1,6 @@
 numpy>=1.24
 pyyaml>=6.0
 jsonschema>=4.19
-spiceypy>=5.1.2
 pytest>=7.4
 matplotlib>=3.0
 websockets>=15.0,<16
@@ -11,3 +10,5 @@ fastapi>=0.110
 uvicorn[standard]>=0.24
 aiofiles>=23.2
 
+fastapi>=0.111
+uvicorn[standard]>=0.30
