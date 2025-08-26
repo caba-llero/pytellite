@@ -1,30 +1,22 @@
-import asyncio
-import json
-import http
-import os
+# --- DIAGNOSTICS ---
 import websockets
-# --- Add these lines for diagnostics ---
 print(f"--- DIAGNOSTIC: websockets version installed is {websockets.__version__} ---")
-# -----------------------------------------
 
+# --- IMPORTS ---
 import asyncio
 import json
 import http
 import os
-# CORRECTED IMPORT FOR MODERN WEBSOCKETS
-from websockets.legacy.http import Response, Headers
-from websockets.server import WebSocketServerProtocol
 from plant.plant import Plant
+# NO MORE 'Response' or 'Headers' imports are needed.
 
-# ... the rest of your code remains the same
-
-# --- Configuration ---
-HTTP_PORT = int(os.getenv('PORT', 8080)) # Use 8080 as a common default for web services
+# --- CONFIGURATION ---
+HTTP_PORT = int(os.getenv('PORT', 8080))
 HOST = os.getenv('HOST', '0.0.0.0')
 
-# --- WebSocket Handler ---
-# I've slightly improved the loop condition in the sender.
-async def calculation_and_update_server(websocket: WebSocketServerProtocol):
+# --- WEBSOCKET HANDLER ---
+# (This part of your code is fine and does not need changes)
+async def calculation_and_update_server(websocket):
     print("Client connected.")
     is_paused = False
     
@@ -44,7 +36,6 @@ async def calculation_and_update_server(websocket: WebSocketServerProtocol):
 
     async def sender():
         plant = Plant('plant/config_default.yaml')
-        # Using websocket.open is a cleaner way to handle the connection lifecycle.
         while websocket.open:
             if not is_paused:
                 euler_angles, angular_velocity = plant.update()
@@ -63,74 +54,52 @@ async def calculation_and_update_server(websocket: WebSocketServerProtocol):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-# --- Helper for Static Files ---
+# --- HELPER FOR STATIC FILES ---
 def _guess_mime_type(path: str) -> str:
-    if path.endswith('.html'):
-        return 'text/html; charset=utf-8'
-    if path.endswith('.js'):
-        return 'application/javascript; charset=utf-8'
-    if path.endswith('.css'):
-        return 'text/css; charset=utf-8'
-    if path.endswith('.json'):
-        return 'application/json; charset=utf-8'
-    if path.endswith('.png'):
-        return 'image/png'
-    if path.endswith('.jpg') or path.endswith('.jpeg'):
-        return 'image/jpeg'
-    if path.endswith('.svg'):
-        return 'image/svg+xml'
+    if path.endswith('.html'): return 'text/html; charset=utf-8'
+    if path.endswith('.js'): return 'application/javascript; charset=utf-8'
+    if path.endswith('.css'): return 'text/css; charset=utf-8'
+    if path.endswith('.json'): return 'application/json; charset=utf-8'
+    if path.endswith('.png'): return 'image/png'
+    if path.endswith('.jpg') or path.endswith('.jpeg'): return 'image/jpeg'
+    if path.endswith('.svg'): return 'image/svg+xml'
     return 'application/octet-stream'
 
-# --- Simplified Static File Server ---
-# This function now always returns a websockets.http.Response object.
-def _serve_static_file(path: str) -> Response:
-    webapp_path = os.path.join(os.path.dirname(__file__), 'webapp')
-
-    if path == '/':
-        path = '/index.html'
-
-    # Prevent directory traversal attacks
-    requested_path = os.path.normpath(path.lstrip('/'))
-    full_path = os.path.join(webapp_path, requested_path)
-
-    if not os.path.normpath(full_path).startswith(os.path.normpath(webapp_path)):
-        return Response(
-            status=http.HTTPStatus.FORBIDDEN,
-            headers=Headers({"Content-Type": "text/plain"}),
-            body=b"Forbidden"
-        )
-
-    try:
-        with open(full_path, 'rb') as f:
-            body = f.read()
-        headers = Headers({
-            "Content-Type": _guess_mime_type(full_path),
-            "Content-Length": str(len(body)),
-        })
-        return Response(status=http.HTTPStatus.OK, headers=headers, body=body)
-    except FileNotFoundError:
-        return Response(
-            status=http.HTTPStatus.NOT_FOUND,
-            headers=Headers({"Content-Type": "text/plain"}),
-            body=b"Not Found"
-        )
-
-# --- Simplified Main Server Logic ---
-# This request processor is much simpler and directly uses the modern API.
-async def process_request(path: str, request_headers: Headers):
+# --- MAIN SERVER LOGIC ---
+# This version returns tuples: (status_code, headers, body)
+# This is the stable, long-term supported API for websockets.
+async def process_request(path: str, request_headers):
     # Health check endpoint
     if path == '/healthz':
-        return Response(
-            status=http.HTTPStatus.OK,
-            headers=Headers({"Content-Type": "text/plain"}),
-            body=b"ok"
-        )
+        headers = [("Content-Type", "text/plain")]
+        return http.HTTPStatus.OK, headers, b"ok"
 
-    # If it's a regular HTTP request, serve a static file.
+    # This is a regular HTTP request, so we serve a static file.
     if "Upgrade" not in request_headers or request_headers["Upgrade"].lower() != "websocket":
-        return _serve_static_file(path)
-    
-    # Otherwise, it's a WebSocket upgrade request. Return None to proceed.
+        webapp_path = os.path.join(os.path.dirname(__file__), 'webapp')
+        if path == '/':
+            path = '/index.html'
+        
+        requested_path = os.path.normpath(path.lstrip('/'))
+        full_path = os.path.join(webapp_path, requested_path)
+
+        if not os.path.normpath(full_path).startswith(os.path.normpath(webapp_path)):
+            return http.HTTPStatus.FORBIDDEN, [], b"Forbidden"
+
+        try:
+            with open(full_path, 'rb') as f:
+                body = f.read()
+            headers = [
+                ("Content-Type", _guess_mime_type(full_path)),
+                ("Content-Length", str(len(body))),
+            ]
+            return http.HTTPStatus.OK, headers, body
+        except (FileNotFoundError, IsADirectoryError):
+            headers = [("Content-Type", "text/plain")]
+            return http.HTTPStatus.NOT_FOUND, headers, b"Not Found"
+
+    # If we get here, it's a WebSocket upgrade request.
+    # Returning None lets the WebSocket handshake proceed.
     return None
 
 async def main():
