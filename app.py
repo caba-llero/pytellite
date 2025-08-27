@@ -10,7 +10,7 @@ from plant.plant import Plant
 os.makedirs("logs", exist_ok=True)
 
 app = FastAPI()
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "web")
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "webapp")
 app.mount("/static", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 @app.get("/")

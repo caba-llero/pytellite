@@ -49,7 +49,7 @@ class Quaternion:
     @property
     def q(self) -> np.ndarray:
         """Get the quaternion vector."""
-        return self._q
+        return self._q.flatten()
 
     @q.setter
     def q(self, value):
@@ -231,7 +231,21 @@ class Quaternion:
     def __eq__(self, other: 'Quaternion') -> bool:
         return np.allclose(self._q, other._q)
     
-
+def slerp(q0: Quaternion, q1: Quaternion, t: float) -> Quaternion:
+    """Spherical linear interpolation between two quaternions."""
+    q0 = q0.n
+    q1 = q1.n
+    dot = np.dot(q0._q, q1._q)
+    if dot < 0:
+        q1 = -q1
+    if dot > 0.9999:
+        return (1 - t) * q0 + t * q1
+    else:
+        theta = np.arccos(dot)
+        s0 = np.sin(theta) 
+        w1 = np.sin((1 - t) * theta) / s0
+        w2 = np.sin(t * theta) / s0
+        return w1 * q0 + w2 * q1
     
 def rotmatrix_to_quaternion(A: np.ndarray) -> Quaternion:
     """

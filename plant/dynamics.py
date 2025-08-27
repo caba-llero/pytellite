@@ -7,6 +7,7 @@ except ImportError:
     # Fallback for direct import (when not used as part of plant package)
     from quaternion_math import Quaternion
 from numpy.linalg import inv, solve
+from scipy.integrate import RK45
 
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
@@ -19,6 +20,36 @@ def skew(v: np.ndarray) -> np.ndarray:
         [v[2], 0, -v[0]],
         [-v[1], v[0], 0]
     ])
+
+def state_deriv(t: float, y: np.ndarray, mu: float = MU_EARTH, J: np.ndarray = None, Ji: np.ndarray = None, L: np.ndarray = None) -> np.ndarray:
+    """
+    Compute the derivative of the state vector.
+    Inputs:
+        y: np.ndarray of shape (6,) - state vector
+        mu: float - gravitational parameter
+    Output:
+    """
+
+    r = y[0:3]
+    v = y[3:6]
+    q = Quaternion(y[6:10])
+    w = y[10:13]
+
+    drdt = v
+    dvdt = -mu * r / np.linalg.norm(r) ** 3
+    dqdt = 0.5 * q ** w
+    dwdt = Ji @ (L - skew(w) @ J @ w)
+
+    dydt = np.hstack((drdt, dvdt, dqdt.q.flatten(), dwdt))
+    return dydt
+
+
+
+
+
+
+
+#### Old
 
 def two_body_acceleration(r_eci: np.ndarray, mu: float = MU_EARTH) -> np.ndarray:
     r_norm = np.linalg.norm(r_eci)

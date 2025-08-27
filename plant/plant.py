@@ -14,7 +14,7 @@ realistic sensor data to flight software and receives actuator commands.
 """
 
 from __future__ import annotations
-
+from scipy.integrate import solve_ivp
 import argparse
 import numpy as np
 import yaml
@@ -25,25 +25,26 @@ try:
     from .quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
 except ImportError:
     # Fall back to absolute imports (when imported by other scripts)
-    from dynamics import rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
+    from dynamics import state_deriv, rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
     from quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
+
+
+MU_EARTH = 3.986004418e14  # [m^3/s^2]
 
 class Plant:
     def __init__(self, config_path: str = "plant/config_default.yaml"):
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f)
 
-        self.dt_sim = float(cfg["simulation"]["dt_sim"])
-        self.t_sim = 0.0
 
         # Initial orbital state
-        r0 = np.array(cfg["initial_conditions"]["r_eci_m"], dtype=float)
-        v0 = np.array(cfg["initial_conditions"]["v_eci_mps"], dtype=float)
-        self.r_i = r0.copy()
-        self.v_i = v0.copy()
+        self.r0 = np.array(cfg["initial_conditions"]["r_eci_m"], dtype=float)
+        self.v0 = np.array(cfg["initial_conditions"]["v_eci_mps"], dtype=float)
+
 
         # Spacecraft properties
         self.J = np.diag(cfg["spacecraft"]["inertia"])
+        self.Ji = np.linalg.inv(self.J)
         self.L = np.zeros(3) # No torque
 
         # Initial attitude state
@@ -70,9 +71,20 @@ class Plant:
         else:
             raise ValueError(f"Invalid initial condition frame: {frame}")
 
+    def compute_states(self, t_range: tuple[float, float], rtol: float = 1e-12) -> np.ndarray:
+        """
+        Compute the states of the plant over a given time range.
+        """
+        t_span = (t_range[0], t_range[1])
+        y0 = np.hstack((self.r0, self.v0, self.q_bi.q, self.w_bi))
+        sol = solve_ivp(state_deriv, t_span, y0, args=(MU_EARTH, self.J, self.Ji, self.L), rtol=rtol)
+        return sol.t, sol.y
+
+
 
     def update(self) -> np.ndarray:
         """
+        DEPRECATED
         Update the plant state by one time step.
         Returns the euler angles (roll, pitch, yaw) of the body wrt inertial frame.
         """
