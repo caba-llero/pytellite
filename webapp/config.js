@@ -9,12 +9,15 @@ function setValue(id, value) {
 }
 
 function readNumber(id) {
-    const v = parseFloat(document.getElementById(id).value);
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const v = parseFloat(el.value);
     return isNaN(v) ? null : v;
 }
 
 function navigateToSimulation(params) {
-    const query = new URLSearchParams(params).toString();
+    const filtered = Object.fromEntries(Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== ''));
+    const query = new URLSearchParams(filtered).toString();
     window.location.href = '/simulation?' + query;
 }
 
@@ -49,6 +52,21 @@ async function init() {
     setValue('SR', sr);
     setValue('RTOL', rtol);
     setValue('ATOL', atol);
+
+    // Tabs behavior
+    const tabs = document.querySelectorAll('.tab');
+    const panels = document.querySelectorAll('.tab-panel');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.getAttribute('data-tab');
+            tabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+            panels.forEach(p => { p.classList.remove('active'); });
+            tab.classList.add('active');
+            tab.setAttribute('aria-selected', 'true');
+            const panel = document.querySelector(`.tab-panel[data-tab="${target}"]`);
+            if (panel) panel.classList.add('active');
+        });
+    });
 
     document.getElementById('startBtn').addEventListener('click', () => {
         const params = {

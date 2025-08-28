@@ -27,6 +27,10 @@ async def serve_index():
 async def serve_index_head():
     return Response(status_code=200)
 
+@app.get("/logo.png")
+async def serve_logo():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "logo.png"))
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
