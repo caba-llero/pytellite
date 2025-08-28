@@ -32,15 +32,15 @@ def state_deriv(t: float, y: np.ndarray, mu: float = MU_EARTH, J: np.ndarray = N
 
     r = y[0:3]
     v = y[3:6]
-    q = Quaternion(y[6:10])
-    w = y[10:13]
+    w = y[6:9]
+    q = Quaternion(y[9:13])
 
     drdt = v
     dvdt = -mu * r / np.linalg.norm(r) ** 3
     dqdt = 0.5 * q ** w
     dwdt = Ji @ (L - skew(w) @ J @ w)
 
-    dydt = np.hstack((drdt, dvdt, dqdt.q.flatten(), dwdt))
+    dydt = np.hstack((drdt, dvdt, dwdt, dqdt.q.flatten()))
     return dydt
 
 

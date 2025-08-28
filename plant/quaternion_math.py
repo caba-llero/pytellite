@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.spatial.transform import Rotation as R 
+from scipy.spatial.transform import Slerp 
 
 class Quaternion:
     """A quaternion class for attitude representation and operations.
@@ -246,7 +248,21 @@ def slerp(q0: Quaternion, q1: Quaternion, t: float) -> Quaternion:
         w1 = np.sin((1 - t) * theta) / s0
         w2 = np.sin(t * theta) / s0
         return w1 * q0 + w2 * q1
-    
+
+def slerp_array(t_sampled: np.ndarray, t0: np.ndarray, q0: np.ndarray  ) -> np.ndarray:
+    """Spherical linear interpolation between many quaternions.
+    q0: np.ndarray of size (4, n) where each column is a quaternion
+    t_sampled: np.ndarray of size (n,)
+    Output: np.ndarray of size (4, n) where each column is a quaternion
+    """
+    q = R.from_quat(q0.T)
+    slerp = Slerp(t0, q)
+    return slerp(t_sampled).as_euler('zyx', degrees=False).T
+
+
+
+
+
 def rotmatrix_to_quaternion(A: np.ndarray) -> Quaternion:
     """
     Convert a rotation matrix to a quaternion.

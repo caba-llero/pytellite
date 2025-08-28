@@ -21,7 +21,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(script_dir)  # This is the project root
 sys.path.insert(0, parent_dir)
 
-from plant.plant import Plant
+from plant.sim import Plant
 
 plant = Plant('plant/config_default.yaml')
 

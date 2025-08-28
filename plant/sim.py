@@ -17,26 +17,41 @@ from __future__ import annotations
 from scipy.integrate import solve_ivp
 import argparse
 import numpy as np
+import os
 import yaml
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
+
+try:
+    from .quaternion_math import slerp
+except ImportError:
+    from plant.quaternion_math import slerp
 
 try:
     # Try relative imports (when run as module)
-    from .dynamics import rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
-    from .quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
+    from .dynamics import rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial, state_deriv
+    from .quaternion_math import slerp_array, rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
 except ImportError:
     # Fall back to absolute imports (when imported by other scripts)
-    from dynamics import state_deriv, rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
-    from quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
+    try:
+        from plant.dynamics import state_deriv, rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
+        from plant.quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
+    except ImportError:
+        # Last resort: import as if we're in the plant package directory
+        from dynamics import state_deriv, rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
+        from quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
 
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
 
 class Plant:
-    def __init__(self, config_path: str = "plant/config_default.yaml", config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None):
         if config is not None:
             cfg = config
         else:
+            if config_path is None:
+                # Use default config relative to this module's location
+                module_dir = os.path.dirname(os.path.abspath(__file__))
+                config_path = os.path.join(module_dir, "config_default.yaml")
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)
 
@@ -85,11 +100,26 @@ class Plant:
         Compute the states of the plant over a given time range.
         """
         t_span = (t_range[0], t_range[1])
-        y0 = np.hstack((self.r0, self.v0, self.q_bi.q, self.w_bi))
+        y0 = np.hstack((self.r0, self.v0, self.w_bi, self.q_bi.q))
         sol = solve_ivp(state_deriv, t_span, y0, args=(MU_EARTH, self.J, self.Ji, self.L), rtol=rtol)
         return sol.t, sol.y
 
+    def evaluate_gui(self, t, y, playback_speed: float = 1.0, sample_rate: float = 30) -> np.ndarray:
+        """
+        Takes the computed states and returns the states at the sample rate.
+        playback_speed is the factor by which the simulation time is scaled (e.g. 1.0 for real time, 0.1 for 10x slow-motion)
+        sample_rate is the number of samples per second.
+        """
+        t_sampled = np.arange(0, t[-1], playback_speed/sample_rate)
+        y_sampled = np.array([np.interp(t_sampled, t, component) for component in y[:9]])
+        r_sampled = y_sampled[0:3]  
+        v_sampled = y_sampled[3:6]
+        w_sampled = y_sampled[6:9]
+        euler_sampled = slerp_array(t_sampled, t, y[9:13])
+        return t_sampled, r_sampled, v_sampled, euler_sampled, w_sampled
 
+
+### DEPRECATED
 
     def update(self) -> np.ndarray:
         """

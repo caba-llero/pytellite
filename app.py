@@ -5,7 +5,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
 from fastapi import Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from plant.plant import Plant
+from plant.sim import Plant
 import yaml
 
 # Ensure logs directory exists
