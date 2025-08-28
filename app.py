@@ -52,6 +52,11 @@ async def api_defaults():
         },
         "simulation": {
             "dt_sim": cfg["simulation"]["dt_sim"],
+            "t_max": cfg["simulation"].get("t_max", 1000.0),
+            "playback_speed": cfg["simulation"].get("playback_speed", 1.0),
+            "sample_rate": cfg["simulation"].get("sample_rate", 30.0),
+            "rtol": cfg["simulation"].get("rtol", 1.0e-12),
+            "atol": cfg["simulation"].get("atol", 1.0e-12),
         },
     }
 
@@ -74,6 +79,11 @@ async def websocket_endpoint(websocket: WebSocket):
         q_bi = payload.get("q_bi")
         omega_bi_radps = payload.get("omega_bi_radps")
         dt_sim = payload.get("dt_sim")
+        t_max = payload.get("t_max")
+        playback_speed = payload.get("playback_speed")
+        sample_rate = payload.get("sample_rate")
+        rtol = payload.get("rtol")
+        atol = payload.get("atol")
         if inertia is not None:
             cfg["spacecraft"]["inertia"] = inertia
         if shape is not None:
@@ -85,6 +95,16 @@ async def websocket_endpoint(websocket: WebSocket):
             cfg["initial_conditions"]["omega_bi_radps"] = omega_bi_radps
         if dt_sim is not None:
             cfg["simulation"]["dt_sim"] = dt_sim
+        if t_max is not None:
+            cfg["simulation"]["t_max"] = t_max
+        if playback_speed is not None:
+            cfg["simulation"]["playback_speed"] = playback_speed
+        if sample_rate is not None:
+            cfg["simulation"]["sample_rate"] = sample_rate
+        if rtol is not None:
+            cfg["simulation"]["rtol"] = rtol
+        if atol is not None:
+            cfg["simulation"]["atol"] = atol
         return cfg
 
     async def receiver():
@@ -115,19 +135,38 @@ async def websocket_endpoint(websocket: WebSocket):
         # Wait for configuration from the client
         await config_event.wait()
         plant = Plant(config=sim_config)
+        # Precompute full trajectory and provide sampled dataset for GUI playback
+        sim = sim_config.get("simulation", {})
+        t_max = float(sim.get("t_max", 1000.0))
+        rtol = float(sim.get("rtol", 1.0e-12))
+        atol = float(sim.get("atol", 1.0e-12))
+        playback_speed = float(sim.get("playback_speed", 1.0))
+        sample_rate = float(sim.get("sample_rate", 30.0))
+
+        try:
+            t, y = plant.compute_states(t_max=t_max, rtol=rtol, atol=atol)
+            t_s, r_s, v_s, eul_s, w_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+            # eul_s is (3, N) in ZYX order -> yaw, pitch, roll. Reorder to roll, pitch, yaw
+            yaw_arr = eul_s[0, :].tolist()
+            pitch_arr = eul_s[1, :].tolist()
+            roll_arr = eul_s[2, :].tolist()
+            dataset = {
+                "t": t_s.tolist(),
+                "roll": roll_arr,
+                "pitch": pitch_arr,
+                "yaw": yaw_arr,
+                "p": w_s[0, :].tolist(),
+                "q": w_s[1, :].tolist(),
+                "r": w_s[2, :].tolist(),
+                "sample_rate": sample_rate,
+            }
+            await websocket.send_text(json.dumps({"dataset": dataset}))
+        except Exception as e:
+            await websocket.send_text(json.dumps({"error": str(e)}))
+
+        # Keep the connection alive to allow future reconfiguration if desired
         while True:
-            if not is_paused:
-                euler_angles, angular_velocity = plant.update()
-                data = {
-                    "roll": euler_angles[0],
-                    "pitch": euler_angles[1],
-                    "yaw": euler_angles[2],
-                    "p": angular_velocity[0],
-                    "q": angular_velocity[1],
-                    "r": angular_velocity[2],
-                }
-                await websocket.send_text(json.dumps(data))
-            await asyncio.sleep(plant.dt_sim)
+            await asyncio.sleep(1.0)
 
     try:
         await asyncio.gather(receiver(), sender())

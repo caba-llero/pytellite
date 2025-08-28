@@ -95,13 +95,13 @@ class Plant:
         else:
             raise ValueError(f"Invalid initial condition frame: {frame}")
 
-    def compute_states(self, t_range: tuple[float, float], rtol: float = 1e-12) -> np.ndarray:
+    def compute_states(self, t_max: float, rtol: float = 1e-12, atol: float = 1e-12) -> np.ndarray:
         """
         Compute the states of the plant over a given time range.
         """
-        t_span = (t_range[0], t_range[1])
+        t_span = (0, t_max)
         y0 = np.hstack((self.r0, self.v0, self.w_bi, self.q_bi.q))
-        sol = solve_ivp(state_deriv, t_span, y0, args=(MU_EARTH, self.J, self.Ji, self.L), rtol=rtol)
+        sol = solve_ivp(state_deriv, t_span, y0, args=(MU_EARTH, self.J, self.Ji, self.L), rtol=rtol, atol=atol)
         return sol.t, sol.y
 
     def evaluate_gui(self, t, y, playback_speed: float = 1.0, sample_rate: float = 30) -> np.ndarray:

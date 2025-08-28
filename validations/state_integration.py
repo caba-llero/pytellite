@@ -22,16 +22,17 @@ q0 = np.array([0.1494, 0.1494, 0.1494, 0.9659])
 w0 = np.array([0.03, 0.02, 0.1])
 
 y0 = np.hstack((r0, v0, w0, q0))
-t_span = (0, 1000)
+t_max = 1000
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
 
-rtol = 1e-12
+rtol = 1e-9
+atol = 1e-12
 
 J = np.diag([2,2,1])
 Ji = np.linalg.inv(J)
 
-sol = solve_ivp(state_deriv, t_span, y0, args=(MU_EARTH, J, Ji, np.zeros(3)), rtol=rtol)
+sol = solve_ivp(state_deriv, (0, t_max), y0, args=(MU_EARTH, J, Ji, np.zeros(3)), rtol=rtol, atol=atol)
 
 r_history = sol.y[0:3, :]
 v_history = sol.y[3:6, :]
@@ -59,7 +60,7 @@ plt.show()
 
 ##### With plant
 plant = Plant()
-t, y = plant.compute_states(t_span)
+t, y = plant.compute_states(t_max, rtol=rtol, atol=atol)
 t_sampled, r_sampled, v_sampled, euler_sampled, w_sampled = plant.evaluate_gui(t, y, playback_speed=1, sample_rate=30)
 
 w_z_history_plant = w_sampled[2, :]

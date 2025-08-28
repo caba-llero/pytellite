@@ -96,6 +96,9 @@ const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
 const wsHost = window.location.host; // includes hostname:port
 const socket = new WebSocket(`${wsScheme}://${wsHost}/ws`);
 let timeTick = 0;
+let dataset = null;
+let frameIndex = 0;
+let playbackTimer = null;
 
 pauseButton.addEventListener('click', () => {
     isPaused = !isPaused;
@@ -113,12 +116,22 @@ socket.onopen = () => {
     const shape = [urlParams.get('sx'), urlParams.get('sy'), urlParams.get('sz')].map(v => v !== null ? parseFloat(v) : null);
     const q_bi = [urlParams.get('qx'), urlParams.get('qy'), urlParams.get('qz'), urlParams.get('qw')].map(v => v !== null ? parseFloat(v) : null);
     const omega = [urlParams.get('wx'), urlParams.get('wy'), urlParams.get('wz')].map(v => v !== null ? parseFloat(v) : null);
+    const tmax = urlParams.get('tmax');
+    const play = urlParams.get('play');
+    const sr = urlParams.get('sr');
+    const rtol = urlParams.get('rtol');
+    const atol = urlParams.get('atol');
 
     const payload = {};
     if (inertia.every(v => typeof v === 'number' && !isNaN(v))) payload.inertia = inertia;
     if (shape.every(v => typeof v === 'number' && !isNaN(v))) payload.shape = shape;
     if (q_bi.every(v => typeof v === 'number' && !isNaN(v))) payload.q_bi = q_bi;
     if (omega.every(v => typeof v === 'number' && !isNaN(v))) payload.omega_bi_radps = omega;
+    if (tmax !== null) payload.t_max = parseFloat(tmax);
+    if (play !== null) payload.playback_speed = parseFloat(play);
+    if (sr !== null) payload.sample_rate = parseFloat(sr);
+    if (rtol !== null) payload.rtol = parseFloat(rtol);
+    if (atol !== null) payload.atol = parseFloat(atol);
 
     // If any payload fields exist, send configure
     if (Object.keys(payload).length > 0) {
@@ -129,23 +142,41 @@ socket.onopen = () => {
     }
 };
 socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    latestAngles = { roll: data.roll, pitch: data.pitch, yaw: data.yaw };
+    const msg = JSON.parse(event.data);
+    if (msg.dataset) {
+        dataset = msg.dataset;
+        frameIndex = 0;
+        // Reset plots (clear existing trace data)
+        Plotly.restyle('rollPlot', { x: [[]], y: [[]] }, [0]);
+        Plotly.restyle('pitchPlot', { x: [[]], y: [[]] }, [0]);
+        Plotly.restyle('yawPlot', { x: [[]], y: [[]] }, [0]);
+        Plotly.restyle('pPlot', { x: [[]], y: [[]] }, [0]);
+        Plotly.restyle('qPlot', { x: [[]], y: [[]] }, [0]);
+        Plotly.restyle('rPlot', { x: [[]], y: [[]] }, [0]);
 
-    const update = {
-        x: [[timeTick], [timeTick], [timeTick], [timeTick], [timeTick], [timeTick]],
-        y: [[data.roll], [data.pitch], [data.yaw], [data.p], [data.q], [data.r]]
-    };
-
-    const traceIndices = [0];
-    Plotly.extendTraces('rollPlot',  { x: [update.x[0]], y: [update.y[0]] }, traceIndices, MAX_DATA_POINTS);
-    Plotly.extendTraces('pitchPlot', { x: [update.x[1]], y: [update.y[1]] }, traceIndices, MAX_DATA_POINTS);
-    Plotly.extendTraces('yawPlot',   { x: [update.x[2]], y: [update.y[2]] }, traceIndices, MAX_DATA_POINTS);
-    Plotly.extendTraces('pPlot',     { x: [update.x[3]], y: [update.y[3]] }, traceIndices, MAX_DATA_POINTS);
-    Plotly.extendTraces('qPlot',     { x: [update.x[4]], y: [update.y[4]] }, traceIndices, MAX_DATA_POINTS);
-    Plotly.extendTraces('rPlot',     { x: [update.x[5]], y: [update.y[5]] }, traceIndices, MAX_DATA_POINTS);
-
-    timeTick++;
+        // Start or restart playback timer based on sample_rate
+        if (playbackTimer) {
+            clearInterval(playbackTimer);
+        }
+        const intervalMs = 1000.0 / (dataset.sample_rate || 30.0);
+        playbackTimer = setInterval(() => {
+            if (!dataset) return;
+            if (isPaused) return;
+            const n = dataset.t.length;
+            if (n === 0) return;
+            const i = Math.min(frameIndex, n - 1);
+            latestAngles = { roll: dataset.roll[i], pitch: dataset.pitch[i], yaw: dataset.yaw[i] };
+            const tx = dataset.t[i];
+            const traceIndices = [0];
+            Plotly.extendTraces('rollPlot',  { x: [[tx]], y: [[dataset.roll[i]]] }, traceIndices, MAX_DATA_POINTS);
+            Plotly.extendTraces('pitchPlot', { x: [[tx]], y: [[dataset.pitch[i]]] }, traceIndices, MAX_DATA_POINTS);
+            Plotly.extendTraces('yawPlot',   { x: [[tx]], y: [[dataset.yaw[i]]] }, traceIndices, MAX_DATA_POINTS);
+            Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i]]] }, traceIndices, MAX_DATA_POINTS);
+            Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i]]] }, traceIndices, MAX_DATA_POINTS);
+            Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i]]] }, traceIndices, MAX_DATA_POINTS);
+            frameIndex = (frameIndex + 1) % n;
+        }, intervalMs);
+    }
 };
 socket.onclose = () => eulerDiv.innerHTML = "Connection Closed.";
 socket.onerror = () => eulerDiv.innerHTML = "Connection Error!";
@@ -153,6 +184,7 @@ socket.onerror = () => eulerDiv.innerHTML = "Connection Error!";
 // --- Animation Loop ---
 function animate() {
     requestAnimationFrame(animate);
+    // positions and plots updated by playback timer
     cuboid.rotation.x = latestAngles.roll;
     cuboid.rotation.y = latestAngles.pitch;
     cuboid.rotation.z = latestAngles.yaw;
