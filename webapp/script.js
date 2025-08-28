@@ -17,7 +17,12 @@ const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 camera.position.set(4, 4, 4);
 
-const cuboid = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 0.5), new THREE.MeshNormalMaterial());
+// Cuboid dimensions will be updated from server-provided defaults or config page via URL params
+const urlParams = new URLSearchParams(window.location.search);
+const sizeX = parseFloat(urlParams.get('sx') || '2');
+const sizeY = parseFloat(urlParams.get('sy') || '1');
+const sizeZ = parseFloat(urlParams.get('sz') || '0.5');
+const cuboid = new THREE.Mesh(new THREE.BoxGeometry(sizeX, sizeY, sizeZ), new THREE.MeshNormalMaterial());
 scene.add(cuboid);
 
 // --- Axes helper: create arrow (solid or dashed) with arrow tip, no text labels ---
@@ -101,7 +106,28 @@ pauseButton.addEventListener('click', () => {
     }
 });
 
-socket.onopen = () => eulerDiv.innerHTML = "Connected";
+socket.onopen = () => {
+    eulerDiv.innerHTML = "Connected";
+    // If configuration values were passed via URL, send configure command once on open
+    const inertia = [urlParams.get('j1'), urlParams.get('j2'), urlParams.get('j3')].map(v => v !== null ? parseFloat(v) : null);
+    const shape = [urlParams.get('sx'), urlParams.get('sy'), urlParams.get('sz')].map(v => v !== null ? parseFloat(v) : null);
+    const q_bi = [urlParams.get('qx'), urlParams.get('qy'), urlParams.get('qz'), urlParams.get('qw')].map(v => v !== null ? parseFloat(v) : null);
+    const omega = [urlParams.get('wx'), urlParams.get('wy'), urlParams.get('wz')].map(v => v !== null ? parseFloat(v) : null);
+
+    const payload = {};
+    if (inertia.every(v => typeof v === 'number' && !isNaN(v))) payload.inertia = inertia;
+    if (shape.every(v => typeof v === 'number' && !isNaN(v))) payload.shape = shape;
+    if (q_bi.every(v => typeof v === 'number' && !isNaN(v))) payload.q_bi = q_bi;
+    if (omega.every(v => typeof v === 'number' && !isNaN(v))) payload.omega_bi_radps = omega;
+
+    // If any payload fields exist, send configure
+    if (Object.keys(payload).length > 0) {
+        socket.send(JSON.stringify({ command: 'configure', payload }));
+    } else {
+        // Otherwise request defaults by sending empty configure to start with defaults
+        socket.send(JSON.stringify({ command: 'configure', payload: {} }));
+    }
+};
 socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
     latestAngles = { roll: data.roll, pitch: data.pitch, yaw: data.yaw };

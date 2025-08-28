@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simulation Configuration</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        body { background: #000; }
+        .config-container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .config-header { position: sticky; top: 0; background: #000; padding: 10px 0; }
+        .start-btn { background-color: #36a2eb; color: white; border: none; padding: 10px 16px; cursor: pointer; font-family: monospace; }
+        .section { margin-top: 20px; }
+        .row { display: flex; gap: 10px; margin: 8px 0; }
+        .row label { width: 160px; display: inline-block; }
+        .row input { width: 120px; padding: 6px; background: #1a1a1a; color: white; border: 1px solid #333; }
+        h2 { margin-bottom: 6px; }
+    </style>
+    <script defer src="/static/config.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8" />
+</head>
+<body>
+    <div class="config-container">
+        <div class="config-header">
+            <button id="startBtn" class="start-btn">Start simulation</button>
+        </div>
+
+        <div class="section">
+            <h2>Spacecraft Inertia (Principal Axes)</h2>
+            <div class="row">
+                <label for="J1">J1</label>
+                <input id="J1" type="number" step="any">
+                <label for="J2">J2</label>
+                <input id="J2" type="number" step="any">
+                <label for="J3">J3</label>
+                <input id="J3" type="number" step="any">
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Rectangular Cuboid Shape (meters)</h2>
+            <div class="row">
+                <label for="SX">Size X</label>
+                <input id="SX" type="number" step="any">
+                <label for="SY">Size Y</label>
+                <input id="SY" type="number" step="any">
+                <label for="SZ">Size Z</label>
+                <input id="SZ" type="number" step="any">
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Initial Angular Velocity (inertial frame, rad/s)</h2>
+            <div class="row">
+                <label for="WX">ωx</label>
+                <input id="WX" type="number" step="any">
+                <label for="WY">ωy</label>
+                <input id="WY" type="number" step="any">
+                <label for="WZ">ωz</label>
+                <input id="WZ" type="number" step="any">
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Initial Quaternion q_bi = [x, y, z, w]</h2>
+            <div class="row">
+                <label for="QX">qx</label>
+                <input id="QX" type="number" step="any">
+                <label for="QY">qy</label>
+                <input id="QY" type="number" step="any">
+                <label for="QZ">qz</label>
+                <input id="QZ" type="number" step="any">
+                <label for="QW">qw</label>
+                <input id="QW" type="number" step="any">
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+
+

@@ -18,6 +18,7 @@ from scipy.integrate import solve_ivp
 import argparse
 import numpy as np
 import yaml
+from typing import Optional, Dict, Any
 
 try:
     # Try relative imports (when run as module)
@@ -32,10 +33,18 @@ except ImportError:
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
 
 class Plant:
-    def __init__(self, config_path: str = "plant/config_default.yaml"):
-        with open(config_path, "r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
+    def __init__(self, config_path: str = "plant/config_default.yaml", config: Optional[Dict[str, Any]] = None):
+        if config is not None:
+            cfg = config
+        else:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f)
 
+
+        # Simulation timing
+        sim_section = cfg.get("simulation", {})
+        self.dt_sim = float(sim_section.get("dt_sim", 0.1))
+        self.t_sim = 0.0
 
         # Initial orbital state
         self.r0 = np.array(cfg["initial_conditions"]["r_eci_m"], dtype=float)
@@ -56,8 +65,8 @@ class Plant:
             w_bo_init = np.array(ic["omega_bo_radps"], dtype=float)
 
             # Compute initial orbit frame
-            _, _, a0 = rk4_step_orbit(r0, v0, 0) # Get initial acceleration
-            R_io, w_oi = orbit_to_inertial(r0, v0, a0)
+            _, _, a0 = rk4_step_orbit(self.r0, self.v0, 0) # Get initial acceleration
+            R_io, w_oi = orbit_to_inertial(self.r0, self.v0, a0)
             q_io = rotmatrix_to_quaternion(R_io)
 
             # Initialize body state wrt inertial frame
