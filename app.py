@@ -23,6 +23,10 @@ async def serve_config():
 async def serve_index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
+@app.get("/loading")
+async def serve_loading():
+    return FileResponse(os.path.join(STATIC_DIR, "loading.html"))
+
 @app.head("/")
 async def serve_index_head():
     return Response(status_code=200)
@@ -65,6 +69,73 @@ async def api_defaults():
     }
 
 
+def merge_with_defaults(payload: dict) -> dict:
+    cfg = _load_defaults()
+    inertia = payload.get("inertia")
+    shape = payload.get("shape")
+    q_bi = payload.get("q_bi")
+    omega_bi_radps = payload.get("omega_bi_radps")
+    dt_sim = payload.get("dt_sim")
+    t_max = payload.get("t_max")
+    playback_speed = payload.get("playback_speed")
+    sample_rate = payload.get("sample_rate")
+    rtol = payload.get("rtol")
+    atol = payload.get("atol")
+    if inertia is not None:
+        cfg["spacecraft"]["inertia"] = inertia
+    if shape is not None:
+        cfg["spacecraft"]["shape"] = shape
+    if q_bi is not None:
+        cfg["initial_conditions"]["frame"] = "inertial"
+        cfg["initial_conditions"]["q_bi"] = q_bi
+    if omega_bi_radps is not None:
+        cfg["initial_conditions"]["omega_bi_radps"] = omega_bi_radps
+    if dt_sim is not None:
+        cfg["simulation"]["dt_sim"] = dt_sim
+    if t_max is not None:
+        cfg["simulation"]["t_max"] = t_max
+    if playback_speed is not None:
+        cfg["simulation"]["playback_speed"] = playback_speed
+    if sample_rate is not None:
+        cfg["simulation"]["sample_rate"] = sample_rate
+    if rtol is not None:
+        cfg["simulation"]["rtol"] = rtol
+    if atol is not None:
+        cfg["simulation"]["atol"] = atol
+    return cfg
+
+
+@app.post("/api/compute")
+async def api_compute(config: dict = Body(default={})):  # type: ignore[assignment]
+    try:
+        sim_config = merge_with_defaults(config or {})
+        plant = Plant(config=sim_config)
+        sim = sim_config.get("simulation", {})
+        t_max = float(sim.get("t_max", 1000.0))
+        rtol = float(sim.get("rtol", 1.0e-12))
+        atol = float(sim.get("atol", 1.0e-12))
+        playback_speed = float(sim.get("playback_speed", 1.0))
+        sample_rate = float(sim.get("sample_rate", 30.0))
+        t, y = plant.compute_states(t_max=t_max, rtol=rtol, atol=atol)
+        t_s, r_s, v_s, eul_s, w_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+        yaw_arr = eul_s[0, :].tolist()
+        pitch_arr = eul_s[1, :].tolist()
+        roll_arr = eul_s[2, :].tolist()
+        dataset = {
+            "t": t_s.tolist(),
+            "roll": roll_arr,
+            "pitch": pitch_arr,
+            "yaw": yaw_arr,
+            "p": w_s[0, :].tolist(),
+            "q": w_s[1, :].tolist(),
+            "r": w_s[2, :].tolist(),
+            "sample_rate": sample_rate,
+        }
+        return {"dataset": dataset}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -74,42 +145,6 @@ async def websocket_endpoint(websocket: WebSocket):
     # Synchronization for receiving configuration before starting the simulation
     config_event = asyncio.Event()
     sim_config = {"_received": False}
-
-    def _merge_with_defaults(payload: dict) -> dict:
-        cfg = _load_defaults()
-        # Apply overrides
-        inertia = payload.get("inertia")
-        shape = payload.get("shape")
-        q_bi = payload.get("q_bi")
-        omega_bi_radps = payload.get("omega_bi_radps")
-        dt_sim = payload.get("dt_sim")
-        t_max = payload.get("t_max")
-        playback_speed = payload.get("playback_speed")
-        sample_rate = payload.get("sample_rate")
-        rtol = payload.get("rtol")
-        atol = payload.get("atol")
-        if inertia is not None:
-            cfg["spacecraft"]["inertia"] = inertia
-        if shape is not None:
-            cfg["spacecraft"]["shape"] = shape
-        if q_bi is not None:
-            cfg["initial_conditions"]["frame"] = "inertial"
-            cfg["initial_conditions"]["q_bi"] = q_bi
-        if omega_bi_radps is not None:
-            cfg["initial_conditions"]["omega_bi_radps"] = omega_bi_radps
-        if dt_sim is not None:
-            cfg["simulation"]["dt_sim"] = dt_sim
-        if t_max is not None:
-            cfg["simulation"]["t_max"] = t_max
-        if playback_speed is not None:
-            cfg["simulation"]["playback_speed"] = playback_speed
-        if sample_rate is not None:
-            cfg["simulation"]["sample_rate"] = sample_rate
-        if rtol is not None:
-            cfg["simulation"]["rtol"] = rtol
-        if atol is not None:
-            cfg["simulation"]["atol"] = atol
-        return cfg
 
     async def receiver():
         nonlocal is_paused, sim_config
@@ -129,7 +164,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif command.get("command") == "configure":
                     print("Received simulation configuration.")
                     payload = command.get("payload", {})
-                    sim_config = _merge_with_defaults(payload)
+                    sim_config = merge_with_defaults(payload)
                     sim_config["_received"] = True
                     config_event.set()
             except json.JSONDecodeError:

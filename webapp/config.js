@@ -18,7 +18,8 @@ function readNumber(id) {
 function navigateToSimulation(params) {
     const filtered = Object.fromEntries(Object.entries(params).filter(([_, v]) => v !== null && v !== undefined && v !== ''));
     const query = new URLSearchParams(filtered).toString();
-    window.location.href = '/simulation?' + query;
+    // Redirect to loading page first
+    window.location.href = '/loading?' + query;
 }
 
 async function init() {

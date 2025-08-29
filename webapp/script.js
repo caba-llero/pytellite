@@ -111,7 +111,39 @@ pauseButton.addEventListener('click', () => {
 
 socket.onopen = () => {
     eulerDiv.innerHTML = "Connected";
-    // If configuration values were passed via URL, send configure command once on open
+    // If a precomputed dataset exists, use it directly and skip configure/start
+    const pre = sessionStorage.getItem('precomputed_dataset');
+    if (pre) {
+        try {
+            const data = JSON.parse(pre);
+            dataset = data;
+            sessionStorage.removeItem('precomputed_dataset');
+            frameIndex = 0;
+            // Kick off playback loop immediately using sample_rate
+            if (playbackTimer) clearInterval(playbackTimer);
+            const intervalMs = 1000.0 / (dataset.sample_rate || 30.0);
+            playbackTimer = setInterval(() => {
+                if (!dataset) return;
+                if (isPaused) return;
+                const n = dataset.t.length;
+                if (n === 0) return;
+                const i = Math.min(frameIndex, n - 1);
+                latestAngles = { roll: dataset.roll[i], pitch: dataset.pitch[i], yaw: dataset.yaw[i] };
+                const tx = dataset.t[i];
+                const traceIndices = [0];
+                Plotly.extendTraces('rollPlot',  { x: [[tx]], y: [[dataset.roll[i]]] }, traceIndices, MAX_DATA_POINTS);
+                Plotly.extendTraces('pitchPlot', { x: [[tx]], y: [[dataset.pitch[i]]] }, traceIndices, MAX_DATA_POINTS);
+                Plotly.extendTraces('yawPlot',   { x: [[tx]], y: [[dataset.yaw[i]]] }, traceIndices, MAX_DATA_POINTS);
+                Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i]]] }, traceIndices, MAX_DATA_POINTS);
+                Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i]]] }, traceIndices, MAX_DATA_POINTS);
+                Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i]]] }, traceIndices, MAX_DATA_POINTS);
+                frameIndex = (frameIndex + 1) % n;
+            }, intervalMs);
+            return; // Skip websocket configure; we already have data
+        } catch {}
+    }
+
+    // Fallback to current behavior: configure and let server stream dataset
     const inertia = [urlParams.get('j1'), urlParams.get('j2'), urlParams.get('j3')].map(v => v !== null ? parseFloat(v) : null);
     const shape = [urlParams.get('sx'), urlParams.get('sy'), urlParams.get('sz')].map(v => v !== null ? parseFloat(v) : null);
     const q_bi = [urlParams.get('qx'), urlParams.get('qy'), urlParams.get('qz'), urlParams.get('qw')].map(v => v !== null ? parseFloat(v) : null);
@@ -133,11 +165,9 @@ socket.onopen = () => {
     if (rtol !== null) payload.rtol = parseFloat(rtol);
     if (atol !== null) payload.atol = parseFloat(atol);
 
-    // If any payload fields exist, send configure
     if (Object.keys(payload).length > 0) {
         socket.send(JSON.stringify({ command: 'configure', payload }));
     } else {
-        // Otherwise request defaults by sending empty configure to start with defaults
         socket.send(JSON.stringify({ command: 'configure', payload: {} }));
     }
 };

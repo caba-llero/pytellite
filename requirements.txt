@@ -4,6 +4,7 @@ jsonschema>=4.19
 pytest>=7.4
 matplotlib>=3.0
 websockets>=15.0,<16
+scipy>=1.10
 
 # Web service stack for Render
 fastapi>=0.110

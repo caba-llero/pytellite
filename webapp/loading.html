@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Loading Simulation</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8" />
+    <style>
+        body { background: #0b0b0b; overflow: hidden; }
+        .loading-wrap { display: flex; align-items: center; justify-content: center; height: 100vh; width: 100vw; }
+        .loading-card { text-align: center; color: #e6eefc; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
+        .loading-title { font-size: 22px; margin-top: 12px; color: #ffffff; }
+        .bar { width: 300px; height: 10px; background: #1f242b; border-radius: 999px; overflow: hidden; margin-top: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+        .bar-inner { height: 100%; width: 0%; background: linear-gradient(135deg, #006896, #0091c7); transition: width 0.2s ease; }
+        .logo { display: block; height: 75px; margin: 0 auto; }
+    </style>
+</head>
+<body>
+    <div class="loading-wrap">
+        <div class="loading-card">
+            <img src="/logo.png" alt="Logo" class="logo">
+            <div class="loading-title">Loading...</div>
+            <div class="bar"><div class="bar-inner" id="bar"></div></div>
+        </div>
+    </div>
+    <script>
+        (async function() {
+            const params = new URLSearchParams(window.location.search);
+            const bar = document.getElementById('bar');
+
+            function animateTo(percent) { bar.style.width = percent + '%'; }
+            animateTo(10);
+
+            // Build compute payload from URL params
+            function readFloat(k) { const v = params.get(k); return v !== null ? parseFloat(v) : null; }
+            const payload = {};
+            const inertia = [readFloat('j1'), readFloat('j2'), readFloat('j3')];
+            const shape = [readFloat('sx'), readFloat('sy'), readFloat('sz')];
+            const q_bi = [readFloat('qx'), readFloat('qy'), readFloat('qz'), readFloat('qw')];
+            const omega = [readFloat('wx'), readFloat('wy'), readFloat('wz')];
+            if (inertia.every(v => typeof v === 'number' && !isNaN(v))) payload.inertia = inertia;
+            if (shape.every(v => typeof v === 'number' && !isNaN(v))) payload.shape = shape;
+            if (q_bi.every(v => typeof v === 'number' && !isNaN(v))) payload.q_bi = q_bi;
+            if (omega.every(v => typeof v === 'number' && !isNaN(v))) payload.omega_bi_radps = omega;
+            const tmax = readFloat('tmax'); if (tmax !== null) payload.t_max = tmax;
+            const play = readFloat('play'); if (play !== null) payload.playback_speed = play;
+            const sr = readFloat('sr'); if (sr !== null) payload.sample_rate = sr;
+            const rtol = readFloat('rtol'); if (rtol !== null) payload.rtol = rtol;
+            const atol = readFloat('atol'); if (atol !== null) payload.atol = atol;
+
+            animateTo(25);
+            // Request precomputation
+            try {
+                const res = await fetch('/api/compute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                animateTo(60);
+                const data = await res.json();
+                if (!data || !data.dataset) {
+                    throw new Error(data && data.error ? data.error : 'Precompute failed');
+                }
+                // Store dataset in sessionStorage and move to simulation
+                sessionStorage.setItem('precomputed_dataset', JSON.stringify(data.dataset));
+                animateTo(100);
+                window.location.replace('/simulation?' + params.toString());
+            } catch (e) {
+                console.error(e);
+                animateTo(100);
+                // Fallback: still navigate; the sim page will compute via websocket
+                window.location.replace('/simulation?' + params.toString());
+            }
+        })();
+    </script>
+</body>
+</html>
+
+
