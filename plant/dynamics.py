@@ -12,6 +12,7 @@ from scipy.integrate import RK45
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
 
+mu = MU_EARTH
 
 def skew(v: np.ndarray) -> np.ndarray:
     """Return the 3x3 skew-symmetric matrix (v_x) of a 3-element vector v."""
@@ -21,7 +22,8 @@ def skew(v: np.ndarray) -> np.ndarray:
         [-v[1], v[0], 0]
     ])
 
-def state_deriv(t: float, y: np.ndarray, mu: float = MU_EARTH, J: np.ndarray = None, Ji: np.ndarray = None, L: np.ndarray = None) -> np.ndarray:
+def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray, 
+    control_type: str, kp: float, kd: float, qc: Quaternion) -> np.ndarray:
     """
     Compute the derivative of the state vector.
     Inputs:
@@ -34,6 +36,9 @@ def state_deriv(t: float, y: np.ndarray, mu: float = MU_EARTH, J: np.ndarray = N
     v = y[3:6]
     w = y[6:9]
     q = Quaternion(y[9:13])
+    q.normalize_inplace()
+
+    L = control_laws(w, q, qc, control_type, kp, kd)
 
     drdt = v
     dvdt = -mu * r / np.linalg.norm(r) ** 3
@@ -42,6 +47,21 @@ def state_deriv(t: float, y: np.ndarray, mu: float = MU_EARTH, J: np.ndarray = N
 
     dydt = np.hstack((drdt, dvdt, dwdt, dqdt.q.flatten()))
     return dydt
+
+def control_laws(w: np.ndarray, q: Quaternion, qc: Quaternion, control_type: str, kp: float, kd: float):
+    if control_type == "zero_torque":
+        return np.zeros(3)
+    elif control_type == "tracking":
+        return control_law_tracking(w, q, qc, kp, kd)
+
+def control_law_tracking(w: np.ndarray, q: Quaternion, qc: Quaternion, kp: float, kd: float):
+    dq = q * ~qc
+    dq.normalize_inplace()
+
+    L = - kp * np.sign(dq.q[3]) * dq.q[0:3] - kd * w
+    return L
+
+
 
 
 

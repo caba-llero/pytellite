@@ -1,0 +1,57 @@
+from matplotlib import pyplot as plt
+import numpy as np
+import os
+import sys
+
+from pathlib import Path
+from scipy.integrate import solve_ivp
+
+# Add the project root directory to the path (relative to this script's location)
+script_dir = Path(__file__).parent
+project_root = script_dir.parent
+sys.path.insert(0, str(project_root))
+
+from plant.dynamics import state_deriv
+from plant.quaternion_math import Quaternion
+from plant.sim import Plant
+
+J = np.diag([10_000, 9_000, 12_000])
+Ji = np.linalg.inv(J)
+q0 = np.array([0.6853, 0.6953, 0.1531, 0.1531])
+w0 = np.array([0.53, 0.53, 0.053]) * np.pi/180
+
+r0 = np.array([7000e3, 0, 0])
+v0 = np.array([0, 7800, 0])
+
+y0 = np.hstack((r0, v0, w0, q0))
+
+
+t_max = 300
+
+kp = 50
+kd = 500
+qc = Quaternion(0,0,0,1)
+
+MU_EARTH = 3.986004418e14  # [m^3/s^2]
+
+rtol = 1e-12
+atol = 1e-12
+
+
+sol = solve_ivp(state_deriv, (0, t_max), y0, args=(J, Ji, "tracking", kp, kd, qc), rtol=rtol, atol=atol)
+
+r_history = sol.y[0:3, :]
+v_history = sol.y[3:6, :]
+w_history = sol.y[6:9, :]
+q = sol.y[9:13, :]
+t = sol.t 
+
+fig,ax = plt.subplots(4,1)
+ax[0].plot(t, q[0,:])
+ax[1].plot(t, q[1,:])
+ax[2].plot(t, q[2,:])
+ax[3].plot(t, q[3,:])
+
+plt.plot()
+
+plt.show()
