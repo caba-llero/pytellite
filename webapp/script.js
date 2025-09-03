@@ -1,5 +1,6 @@
 // --- Basic Setup ---
 const eulerDiv = document.getElementById('euler-angles');
+const metricsDiv = document.getElementById('metrics');
 const rendererContainer = document.getElementById('renderer-container');
 const playPauseBtn = document.getElementById('playPauseBtn');
 const timelineSlider = document.getElementById('timelineSlider');
@@ -98,6 +99,7 @@ const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
 const wsHost = window.location.host;
 const socket = new WebSocket(`${wsScheme}://${wsHost}/ws`);
 let dataset = null;
+let metrics = null;
 let frameIndex = 0;
 let playbackTimer = null;
 let precomputedDataLoaded = false;
@@ -166,8 +168,22 @@ timelineSlider.addEventListener('input', () => {
     }
 });
 
-function startPlaybackFromDataset(data) {
+function renderMetrics(m) {
+    if (!metricsDiv || !m) return;
+    const rows = [
+        ['Compute time', `${(m.compute_time_s || 0).toFixed(3)} s`],
+        ['Integration points (N)', `${m.num_integration_points ?? '—'}`],
+        ['Time per step', `${(m.time_per_integration_point_s || 0).toExponential(2)} s/step`],
+        ['Solver state size', `${m.solver_state_size_readable || '—'} (${m.solver_state_size_bytes || 0} B)`]
+    ];
+    const html = rows.map(([k,v]) => `<div><span style="color:#8fa1b3">${k}:</span> <span style="color:#e6eefc">${v}</span></div>`).join('');
+    metricsDiv.innerHTML = html;
+}
+
+function startPlaybackFromDataset(data, m=null) {
     dataset = data;
+    metrics = m;
+    if (metrics) renderMetrics(metrics);
     frameIndex = 0;
     if (typeof Plotly !== 'undefined') {
         try {
@@ -201,8 +217,12 @@ function startPlaybackFromDataset(data) {
     if (pre) {
         try {
             const data = JSON.parse(pre);
-            startPlaybackFromDataset(data);
+            // Also try to read metrics if present (future-proof)
+            const preMetrics = sessionStorage.getItem('precomputed_metrics');
+            const m = preMetrics ? JSON.parse(preMetrics) : null;
+            startPlaybackFromDataset(data, m);
             sessionStorage.removeItem('precomputed_dataset');
+            if (preMetrics) sessionStorage.removeItem('precomputed_metrics');
             precomputedDataLoaded = true;
         } catch (e) {
             console.warn('Failed to parse precomputed dataset.', e);
@@ -260,7 +280,7 @@ socket.onopen = () => {
 socket.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.dataset) {
-        startPlaybackFromDataset(msg.dataset);
+        startPlaybackFromDataset(msg.dataset, msg.metrics || null);
     }
 };
 

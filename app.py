@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Response
 from fastapi import Body
 from fastapi.staticfiles import StaticFiles
@@ -139,6 +140,19 @@ def merge_with_defaults(payload: dict) -> dict:
     return cfg
 
 
+def _bytes_human(n: int) -> str:
+    try:
+        kb = 1024.0
+        mb = kb * 1024.0
+        if n >= mb:
+            return f"{n/mb:.2f} MB"
+        if n >= kb:
+            return f"{n/kb:.2f} KB"
+        return f"{n} B"
+    except Exception:
+        return str(n)
+
+
 @app.post("/api/compute")
 async def api_compute(config: dict = Body(default={})):  # type: ignore[assignment]
     try:
@@ -166,7 +180,9 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             args["kd"] = kd
             args["qc"] = Quaternion(qc_list)
 
+        t0 = time.perf_counter()
         t, y = plant.compute_states(**args)
+        t_compute = time.perf_counter() - t0
         t_s, r_s, v_s, eul_s, w_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
         yaw_arr = eul_s[0, :].tolist()
         pitch_arr = eul_s[1, :].tolist()
@@ -181,7 +197,19 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             "r": w_s[2, :].tolist(),
             "sample_rate": sample_rate,
         }
-        return {"dataset": dataset}
+        # Metrics
+        num_steps = int(t.shape[0])
+        # Low-overhead memory proxy: raw solver arrays size (pre-JSON)
+        solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
+        time_per_step = (t_compute / num_steps) if num_steps > 0 else 0.0
+        metrics = {
+            "compute_time_s": t_compute,
+            "num_integration_points": num_steps,
+            "time_per_integration_point_s": time_per_step,
+            "solver_state_size_bytes": solver_bytes,
+            "solver_state_size_readable": _bytes_human(solver_bytes),
+        }
+        return {"dataset": dataset, "metrics": metrics}
     except Exception as e:
         return {"error": str(e)}
 
@@ -248,7 +276,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 args["kd"] = kd
                 args["qc"] = Quaternion(qc_list)
 
+            t0 = time.perf_counter()
             t, y = plant.compute_states(**args)
+            t_compute = time.perf_counter() - t0
             t_s, r_s, v_s, eul_s, w_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
             # eul_s is (3, N) in ZYX order -> yaw, pitch, roll. Reorder to roll, pitch, yaw
             yaw_arr = eul_s[0, :].tolist()
@@ -264,7 +294,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 "r": w_s[2, :].tolist(),
                 "sample_rate": sample_rate,
             }
-            await websocket.send_text(json.dumps({"dataset": dataset}))
+            # Metrics
+            num_steps = int(t.shape[0])
+            solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
+            time_per_step = (t_compute / num_steps) if num_steps > 0 else 0.0
+            metrics = {
+                "compute_time_s": t_compute,
+                "num_integration_points": num_steps,
+                "time_per_integration_point_s": time_per_step,
+                "solver_state_size_bytes": solver_bytes,
+                "solver_state_size_readable": _bytes_human(solver_bytes),
+            }
+            await websocket.send_text(json.dumps({"dataset": dataset, "metrics": metrics}))
         except Exception as e:
             await websocket.send_text(json.dumps({"error": str(e)}))
 

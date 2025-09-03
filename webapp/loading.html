@@ -79,6 +79,9 @@
                 }
                 // Store dataset in sessionStorage and move to simulation
                 sessionStorage.setItem('precomputed_dataset', JSON.stringify(data.dataset));
+                if (data.metrics) {
+                    sessionStorage.setItem('precomputed_metrics', JSON.stringify(data.metrics));
+                }
                 animateTo(100);
                 window.location.replace('/simulation?' + params.toString());
             } catch (e) {

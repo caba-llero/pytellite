@@ -22,6 +22,14 @@ def skew(v: np.ndarray) -> np.ndarray:
         [-v[1], v[0], 0]
     ])
 
+def Psi(q: np.ndarray) -> np.ndarray:
+    return np.array([
+        [q[3], -q[2], q[1]],
+        [q[2], q[3], -q[0]],
+        [-q[1], q[0], q[3]],
+        [-q[0], -q[1], -q[2]]
+    ])
+
 def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray, 
     control_type: str, kp: float, kd: float, qc: Quaternion) -> np.ndarray:
     """
