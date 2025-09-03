@@ -78,15 +78,77 @@ body {
 .legend-color.y { background-color: #00ff00; }
 .legend-color.z { background-color: #0000ff; }
 .legend-axis-label { margin-right: 8px; color: #ddd; }
-#pauseButton {
-    width: 100%;
-    padding: 8px;
-    margin-top: 10px;
-    background-color: #006896;
+
+/* Modern player controls at bottom center */
+.player-controls {
+    position: absolute;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: min(720px, 92%);
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    padding: 10px 12px;
+    border-radius: 12px;
+    backdrop-filter: blur(6px);
+}
+.play-pause-btn {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #006896, #0091c7);
     border: none;
     color: white;
     cursor: pointer;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+    border-radius: 999px;
+}
+.play-pause-btn .icon { pointer-events: none; }
+.play-pause-btn .icon-play { display: block; }
+.play-pause-btn .icon-pause { display: none; }
+.play-pause-btn.playing .icon-play { display: none; }
+.play-pause-btn.playing .icon-pause { display: block; }
+
+.timeline-slider {
+    flex: 1 1 auto;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 8px;
+    background: #30343a;
+    outline: none;
+    border-radius: 999px;
+}
+.timeline-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #00a3ff;
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid #cfefff22;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+}
+.timeline-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: #00a3ff;
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid #cfefff22;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+}
+
+.time-label {
+    font-size: 12px;
+    color: #d5dde8;
+    min-width: 120px;
+    text-align: right;
 }
 
 #site-logo {

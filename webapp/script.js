@@ -1,11 +1,19 @@
 // --- Basic Setup ---
 const eulerDiv = document.getElementById('euler-angles');
 const rendererContainer = document.getElementById('renderer-container');
-const pauseButton = document.getElementById('pauseButton');
+const playPauseBtn = document.getElementById('playPauseBtn');
+const timelineSlider = document.getElementById('timelineSlider');
+const timeLabel = document.getElementById('timeLabel');
 
 let latestAngles = { roll: 0, pitch: 0, yaw: 0 };
 let isPaused = false;
-const MAX_DATA_POINTS = 150;
+
+function fmtTime(seconds) {
+    const s = Math.max(0, Math.floor(seconds));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${String(m).padStart(2,'0')}:${String(r).padStart(2,'0')}`;
+}
 
 // --- 3D Scene Setup ---
 const scene = new THREE.Scene();
@@ -17,7 +25,7 @@ const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 camera.position.set(4, 4, 4);
 
-// Cuboid dimensions will be updated from server-provided defaults or config page via URL params
+// Cuboid dimensions
 const urlParams = new URLSearchParams(window.location.search);
 const sizeX = parseFloat(urlParams.get('sx') || '2');
 const sizeY = parseFloat(urlParams.get('sy') || '1');
@@ -25,13 +33,11 @@ const sizeZ = parseFloat(urlParams.get('sz') || '0.5');
 const cuboid = new THREE.Mesh(new THREE.BoxGeometry(sizeX, sizeY, sizeZ), new THREE.MeshNormalMaterial());
 scene.add(cuboid);
 
-// --- Axes helper: create arrow (solid or dashed) with arrow tip, no text labels ---
+// Axes helpers
 function createAxis(parent, direction, color, length, dashed = false) {
     const dir = new THREE.Vector3(...direction).normalize();
     const start = new THREE.Vector3(0, 0, 0);
     const end = dir.clone().multiplyScalar(length);
-
-    // Shaft
     const shaftGeometry = new THREE.BufferGeometry().setFromPoints([start, end]);
     let shaftMaterial;
     if (dashed) {
@@ -44,8 +50,6 @@ function createAxis(parent, direction, color, length, dashed = false) {
         shaft.computeLineDistances();
     }
     parent.add(shaft);
-
-    // Arrow tip
     const headLength = 0.2;
     const headRadius = 0.08;
     const coneGeometry = new THREE.ConeGeometry(headRadius, headLength, 16);
@@ -57,20 +61,14 @@ function createAxis(parent, direction, color, length, dashed = false) {
     cone.position.copy(end.clone().sub(dir.clone().multiplyScalar(headLength)));
     parent.add(cone);
 }
-
-// --- NEW: Create Inertial Frame Axes (solid) ---
 createAxis(scene, [1, 0, 0], 0xff0000, 5, false);
 createAxis(scene, [0, 1, 0], 0x00ff00, 5, false);
 createAxis(scene, [0, 0, 1], 0x0000ff, 5, false);
-
-// --- NEW: Create Body-Fixed Frame Axes (dashed) ---
-// We add these to the cuboid object itself, so they rotate with it.
 createAxis(cuboid, [1, 0, 0], 0xff0000, 3, true);
 createAxis(cuboid, [0, 1, 0], 0x00ff00, 3, true);
 createAxis(cuboid, [0, 0, 1], 0x0000ff, 3, true);
 
-
-// --- Plotly Charting Setup ---
+// Plotly charts
 function createPlotlyChart(divId, title, color, y_range) {
     const data = [{ x: [], y: [], type: 'scatter', mode: 'lines', line: { color: color, width: 2 } }];
     const layout = {
@@ -82,7 +80,6 @@ function createPlotlyChart(divId, title, color, y_range) {
     };
     Plotly.newPlot(divId, data, layout, { responsive: true });
 }
-
 createPlotlyChart('rollPlot', 'Roll (X)', '#ff6384', [-Math.PI, Math.PI]);
 createPlotlyChart('pitchPlot', 'Pitch (Y)', '#36a2eb', [-Math.PI, Math.PI]);
 createPlotlyChart('yawPlot', 'Yaw (Z)', '#4bc0c0', [-Math.PI, Math.PI]);
@@ -90,28 +87,76 @@ createPlotlyChart('pPlot', 'Roll Rate', '#ff9f40', [-5, 5]);
 createPlotlyChart('qPlot', 'Pitch Rate', '#9966ff', [-5, 5]);
 createPlotlyChart('rPlot', 'Yaw Rate', '#c9cbcf', [-5, 5]);
 
-// --- WebSocket & Controls ---
-// Build dynamic WebSocket URL based on current page location
+// WebSocket & Controls
 const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-const wsHost = window.location.host; // includes hostname:port
+const wsHost = window.location.host;
 const socket = new WebSocket(`${wsScheme}://${wsHost}/ws`);
-let timeTick = 0;
 let dataset = null;
 let frameIndex = 0;
 let playbackTimer = null;
 
-pauseButton.addEventListener('click', () => {
-    isPaused = !isPaused;
-    pauseButton.innerText = isPaused ? 'Resume' : 'Pause';
-    const command = { command: isPaused ? 'pause' : 'resume' };
-    if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify(command));
+function updateTimeLabel(i) {
+    if (!dataset) return;
+    const t = dataset.t[i] || 0;
+    const tmax = dataset.t[dataset.t.length - 1] || 0;
+    timeLabel.textContent = `${fmtTime(t)} / ${fmtTime(tmax)}`;
+}
+
+function updateAllVisuals(index, isScrubbing = false) {
+    if (!dataset || index < 0 || index >= dataset.t.length) return;
+    const i = Math.min(index, dataset.t.length - 1);
+    latestAngles = { roll: dataset.roll[i], pitch: dataset.pitch[i], yaw: dataset.yaw[i] };
+    timelineSlider.value = i;
+    updateTimeLabel(i);
+
+    const allPlots = ['rollPlot', 'pitchPlot', 'yawPlot', 'pPlot', 'qPlot', 'rPlot'];
+    const dataKeys = ['roll', 'pitch', 'yaw', 'p', 'q', 'r'];
+
+    if (isScrubbing) {
+        for (let j = 0; j < allPlots.length; j++) {
+            const trace = {
+                x: [dataset.t.slice(0, i + 1)],
+                y: [dataset[dataKeys[j]].slice(0, i + 1)]
+            };
+            Plotly.restyle(allPlots[j], trace, [0]);
+        }
+    } else {
+        const tx = dataset.t[i];
+        const traceIndices = [0];
+        Plotly.extendTraces('rollPlot',  { x: [[tx]], y: [[dataset.roll[i]]] }, traceIndices);
+        Plotly.extendTraces('pitchPlot', { x: [[tx]], y: [[dataset.pitch[i]]] }, traceIndices);
+        Plotly.extendTraces('yawPlot',   { x: [[tx]], y: [[dataset.yaw[i]]] }, traceIndices);
+        Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i]]] }, traceIndices);
+        Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i]]] }, traceIndices);
+        Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i]]] }, traceIndices);
+    }
+}
+
+function setPlayingState(playing) {
+    if (playing) {
+        playPauseBtn.classList.add('playing');
+        isPaused = false;
+    } else {
+        playPauseBtn.classList.remove('playing');
+        isPaused = true;
+    }
+}
+
+playPauseBtn.addEventListener('click', () => {
+    setPlayingState(isPaused); // toggle state
+});
+
+timelineSlider.addEventListener('input', () => {
+    setPlayingState(false);
+    const newIndex = parseInt(timelineSlider.value, 10);
+    if (newIndex !== frameIndex) {
+        frameIndex = newIndex;
+        updateAllVisuals(frameIndex, true);
     }
 });
 
 socket.onopen = () => {
     eulerDiv.innerHTML = "Connected";
-    // If a precomputed dataset exists, use it directly and skip configure/start
     const pre = sessionStorage.getItem('precomputed_dataset');
     if (pre) {
         try {
@@ -119,31 +164,23 @@ socket.onopen = () => {
             dataset = data;
             sessionStorage.removeItem('precomputed_dataset');
             frameIndex = 0;
-            // Kick off playback loop immediately using sample_rate
+            timelineSlider.max = dataset.t.length - 1;
+            updateAllVisuals(0, true);
+            setPlayingState(true);
             if (playbackTimer) clearInterval(playbackTimer);
             const intervalMs = 1000.0 / (dataset.sample_rate || 30.0);
             playbackTimer = setInterval(() => {
-                if (!dataset) return;
-                if (isPaused) return;
+                if (!dataset || isPaused) return;
                 const n = dataset.t.length;
-                if (n === 0) return;
-                const i = Math.min(frameIndex, n - 1);
-                latestAngles = { roll: dataset.roll[i], pitch: dataset.pitch[i], yaw: dataset.yaw[i] };
-                const tx = dataset.t[i];
-                const traceIndices = [0];
-                Plotly.extendTraces('rollPlot',  { x: [[tx]], y: [[dataset.roll[i]]] }, traceIndices, MAX_DATA_POINTS);
-                Plotly.extendTraces('pitchPlot', { x: [[tx]], y: [[dataset.pitch[i]]] }, traceIndices, MAX_DATA_POINTS);
-                Plotly.extendTraces('yawPlot',   { x: [[tx]], y: [[dataset.yaw[i]]] }, traceIndices, MAX_DATA_POINTS);
-                Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i]]] }, traceIndices, MAX_DATA_POINTS);
-                Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i]]] }, traceIndices, MAX_DATA_POINTS);
-                Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i]]] }, traceIndices, MAX_DATA_POINTS);
-                frameIndex = (frameIndex + 1) % n;
+                if (n === 0 || frameIndex >= n - 1) return;
+                frameIndex++;
+                updateAllVisuals(frameIndex);
             }, intervalMs);
-            return; // Skip websocket configure; we already have data
+            return;
         } catch {}
     }
 
-    // Fallback to current behavior: configure and let server stream dataset
+    // configure via websocket
     const inertia = [urlParams.get('j1'), urlParams.get('j2'), urlParams.get('j3')].map(v => v !== null ? parseFloat(v) : null);
     const shape = [urlParams.get('sx'), urlParams.get('sy'), urlParams.get('sz')].map(v => v !== null ? parseFloat(v) : null);
     const q_bi = [urlParams.get('qx'), urlParams.get('qy'), urlParams.get('qz'), urlParams.get('qw')].map(v => v !== null ? parseFloat(v) : null);
@@ -171,7 +208,6 @@ socket.onopen = () => {
     if (sr !== null) payload.sample_rate = parseFloat(sr);
     if (rtol !== null) payload.rtol = parseFloat(rtol);
     if (atol !== null) payload.atol = parseFloat(atol);
-    // control
     if (ctrl) payload.control_type = ctrl;
     if (kp !== null) payload.kp = parseFloat(kp);
     if (kd !== null) payload.kd = parseFloat(kd);
@@ -184,50 +220,41 @@ socket.onopen = () => {
         socket.send(JSON.stringify({ command: 'configure', payload: {} }));
     }
 };
+
 socket.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.dataset) {
         dataset = msg.dataset;
         frameIndex = 0;
-        // Reset plots (clear existing trace data)
         Plotly.restyle('rollPlot', { x: [[]], y: [[]] }, [0]);
         Plotly.restyle('pitchPlot', { x: [[]], y: [[]] }, [0]);
         Plotly.restyle('yawPlot', { x: [[]], y: [[]] }, [0]);
         Plotly.restyle('pPlot', { x: [[]], y: [[]] }, [0]);
         Plotly.restyle('qPlot', { x: [[]], y: [[]] }, [0]);
         Plotly.restyle('rPlot', { x: [[]], y: [[]] }, [0]);
-
-        // Start or restart playback timer based on sample_rate
+        timelineSlider.max = dataset.t.length - 1;
+        updateAllVisuals(0, true);
+        setPlayingState(true);
         if (playbackTimer) {
             clearInterval(playbackTimer);
         }
         const intervalMs = 1000.0 / (dataset.sample_rate || 30.0);
         playbackTimer = setInterval(() => {
-            if (!dataset) return;
-            if (isPaused) return;
+            if (!dataset || isPaused) return;
             const n = dataset.t.length;
-            if (n === 0) return;
-            const i = Math.min(frameIndex, n - 1);
-            latestAngles = { roll: dataset.roll[i], pitch: dataset.pitch[i], yaw: dataset.yaw[i] };
-            const tx = dataset.t[i];
-            const traceIndices = [0];
-            Plotly.extendTraces('rollPlot',  { x: [[tx]], y: [[dataset.roll[i]]] }, traceIndices, MAX_DATA_POINTS);
-            Plotly.extendTraces('pitchPlot', { x: [[tx]], y: [[dataset.pitch[i]]] }, traceIndices, MAX_DATA_POINTS);
-            Plotly.extendTraces('yawPlot',   { x: [[tx]], y: [[dataset.yaw[i]]] }, traceIndices, MAX_DATA_POINTS);
-            Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i]]] }, traceIndices, MAX_DATA_POINTS);
-            Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i]]] }, traceIndices, MAX_DATA_POINTS);
-            Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i]]] }, traceIndices, MAX_DATA_POINTS);
-            frameIndex = (frameIndex + 1) % n;
+            if (n === 0 || frameIndex >= n - 1) return;
+            frameIndex++;
+            updateAllVisuals(frameIndex);
         }, intervalMs);
     }
 };
+
 socket.onclose = () => eulerDiv.innerHTML = "Connection Closed.";
 socket.onerror = () => eulerDiv.innerHTML = "Connection Error!";
 
-// --- Animation Loop ---
+// Animation loop
 function animate() {
     requestAnimationFrame(animate);
-    // positions and plots updated by playback timer
     cuboid.rotation.x = latestAngles.roll;
     cuboid.rotation.y = latestAngles.pitch;
     cuboid.rotation.z = latestAngles.yaw;
