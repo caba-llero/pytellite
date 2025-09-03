@@ -10,8 +10,19 @@ body {
     width: 100vw;
     height: 100vh;
 }
+#left-panel {
+    width: 320px;
+    min-width: 280px;
+    max-width: 420px;
+    height: 100vh;
+    overflow: auto;
+    background-color: #0f1318;
+    border-right: 1px solid #1d2229;
+    box-sizing: border-box;
+    padding: 10px;
+}
 #main-vis {
-    flex: 2; /* 2/3 of the width */
+    flex: 1;
     position: relative;
 }
 #renderer-container {
@@ -36,15 +47,7 @@ body {
     flex: 1;
     min-height: 0;
 }
-#info {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    background-color: rgba(0,0,0,0.5);
-    padding: 10px;
-    border-radius: 5px;
-    z-index: 10;
-}
+#info { display: none; }
 #legend {
     margin-top: 10px;
     font-size: 12px;
@@ -156,3 +159,12 @@ body {
     max-height: 75px;
     margin-bottom: 8px;
 }
+
+/* Tabs for left panel */
+.tabs { display: flex; gap: 8px; border-bottom: 1px solid #1f242b; margin: 8px 0 12px 0; overflow-x: auto; }
+.tab { background: transparent; border: none; color: #aeb6c2; padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+.tab:hover { color: #e6eefc; }
+.tab.active { color: #ffffff; border-bottom-color: #006896; background: #12161b; }
+.panels { padding-top: 4px; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }

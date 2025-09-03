@@ -9,30 +9,41 @@
 </head>
 <body>
     <div id="container">
-        <div id="main-vis">
-            <div id="info">
-                <img src="/logo.png" alt="Logo" id="site-logo">
-                <div id="euler-angles">Not Connected</div>
-                <div id="metrics" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
-                <div style="margin-top:8px">
-                    <a href="/" style="color:#006896;text-decoration:none">Change configuration</a>
-                </div>
-                <div id="legend">
-                    <div class="legend-section">
-                        <span class="legend-line solid"></span>
-                        <span class="legend-text">Inertial axes</span>
-                    </div>
-                    <div class="legend-section">
-                        <span class="legend-line dashed"></span>
-                        <span class="legend-text">Body axes</span>
-                    </div>
-                    <div class="legend-section legend-colors">
-                        <span class="legend-color x"></span><span class="legend-axis-label">X</span>
-                        <span class="legend-color y"></span><span class="legend-axis-label">Y</span>
-                        <span class="legend-color z"></span><span class="legend-axis-label">Z</span>
-                    </div>
-                </div>
+        <div id="left-panel">
+            <img src="/logo.png" alt="Logo" id="site-logo">
+            <div class="tabs" role="tablist">
+                <button class="tab active" data-tab="a" role="tab" aria-selected="true">Tab A</button>
+                <button class="tab" data-tab="b" role="tab" aria-selected="false">Tab B</button>
             </div>
+            <div class="panels">
+                <section class="tab-panel active" data-tab="a" role="tabpanel">
+                    <div id="euler-angles">Not Connected</div>
+                    <div id="metrics" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
+                    <div style="margin-top:8px">
+                        <a href="/" style="color:#006896;text-decoration:none">Change configuration</a>
+                    </div>
+                    <div id="legend">
+                        <div class="legend-section">
+                            <span class="legend-line solid"></span>
+                            <span class="legend-text">Inertial axes</span>
+                        </div>
+                        <div class="legend-section">
+                            <span class="legend-line dashed"></span>
+                            <span class="legend-text">Body axes</span>
+                        </div>
+                        <div class="legend-section legend-colors">
+                            <span class="legend-color x"></span><span class="legend-axis-label">X</span>
+                            <span class="legend-color y"></span><span class="legend-axis-label">Y</span>
+                            <span class="legend-color z"></span><span class="legend-axis-label">Z</span>
+                        </div>
+                    </div>
+                </section>
+                <section class="tab-panel" data-tab="b" role="tabpanel">
+                    <div style="color:#9aa4b2;font-size:13px">Placeholder content for Tab B.</div>
+                </section>
+            </div>
+        </div>
+        <div id="main-vis">
             <div id="renderer-container"></div>
             <div id="playerControls" class="player-controls">
                 <button id="playPauseBtn" class="play-pause-btn" aria-label="Play/Pause">

@@ -1,6 +1,19 @@
 // --- Basic Setup ---
 const eulerDiv = document.getElementById('euler-angles');
 const metricsDiv = document.getElementById('metrics');
+// Simple tabs behavior for left panel
+document.querySelectorAll('#left-panel .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        const group = tab.closest('#left-panel');
+        const target = tab.getAttribute('data-tab');
+        group.querySelectorAll('.tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+        group.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        tab.setAttribute('aria-selected', 'true');
+        const panel = group.querySelector(`.tab-panel[data-tab="${target}"]`);
+        if (panel) panel.classList.add('active');
+    });
+});
 const rendererContainer = document.getElementById('renderer-container');
 const playPauseBtn = document.getElementById('playPauseBtn');
 const timelineSlider = document.getElementById('timelineSlider');
