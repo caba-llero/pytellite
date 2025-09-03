@@ -38,7 +38,21 @@
                         </div>
                     </div>
                 </section>
-                <section class="tab-panel" data-tab="plots" role="tabpanel"></section>
+                <section class="tab-panel" data-tab="plots" role="tabpanel">
+                    <div style="display:flex;flex-direction:column;gap:8px;padding:6px 2px;color:#cfd8e3;font-size:12px">
+                        <label for="timeUnitSelect">Time axis</label>
+                        <select id="timeUnitSelect" style="background:#12161b;color:#e6eefc;border:1px solid #1f242b;border-radius:6px;padding:6px 8px;">
+                            <option value="s" selected>seconds</option>
+                            <option value="m">minutes</option>
+                            <option value="h">hours</option>
+                        </select>
+                        <label for="omegaUnitSelect" style="margin-top:6px;">Angular velocity</label>
+                        <select id="omegaUnitSelect" style="background:#12161b;color:#e6eefc;border:1px solid #1f242b;border-radius:6px;padding:6px 8px;">
+                            <option value="rad" selected>rad/s</option>
+                            <option value="deg">deg/s</option>
+                        </select>
+                    </div>
+                </section>
                 <section class="tab-panel" data-tab="axes" role="tabpanel"></section>
                 <section class="tab-panel" data-tab="other" role="tabpanel">
                     <div id="sim-info" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
@@ -66,9 +80,9 @@
                 <div id="qxPlot" class="plot-wrapper"></div>
                 <div id="qyPlot" class="plot-wrapper"></div>
                 <div id="qzPlot" class="plot-wrapper"></div>
+                <div id="qwPlot" class="plot-wrapper"></div>
             </div>
             <div class="plot-column">
-                <div id="qwPlot" class="plot-wrapper"></div>
                 <div id="pPlot" class="plot-wrapper"></div>
                 <div id="qPlot" class="plot-wrapper"></div>
                 <div id="rPlot" class="plot-wrapper"></div>

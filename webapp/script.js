@@ -104,30 +104,89 @@ function repositionRenderer() {
 repositionRenderer();
 
 // Plotly charts
-function createPlotlyChart(divId, title, color, y_range) {
+const timeUnitSelect = document.getElementById('timeUnitSelect');
+const omegaUnitSelect = document.getElementById('omegaUnitSelect');
+
+function getTimeFactor() {
+    const unit = (timeUnitSelect && timeUnitSelect.value) || 's';
+    if (unit === 'm') return 1/60;
+    if (unit === 'h') return 1/3600;
+    return 1;
+}
+
+function getTimeUnitLabel() {
+    const unit = (timeUnitSelect && timeUnitSelect.value) || 's';
+    if (unit === 'm') return 'min';
+    if (unit === 'h') return 'h';
+    return 's';
+}
+
+function getOmegaFactor() {
+    const unit = (omegaUnitSelect && omegaUnitSelect.value) || 'rad';
+    return unit === 'deg' ? (180/Math.PI) : 1;
+}
+
+function getOmegaUnitLabel() {
+    const unit = (omegaUnitSelect && omegaUnitSelect.value) || 'rad';
+    return unit === 'deg' ? 'deg/s' : 'rad/s';
+}
+
+function createPlotlyChart(divId, yAxisTitle, color, y_range) {
     try {
         if (typeof Plotly === 'undefined') return;
         const data = [{ x: [], y: [], type: 'scatter', mode: 'lines', line: { color: color, width: 2 } }];
         const layout = {
-            title: { text: title, font: { color: 'white', size: 14 } },
             paper_bgcolor: '#1a1a1a', plot_bgcolor: '#1a1a1a',
-            margin: { l: 40, r: 20, b: 30, t: 40, pad: 4 },
+            margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
             xaxis: { color: 'white', gridcolor: '#444' },
-            yaxis: { color: 'white', gridcolor: '#444', range: y_range }
+            yaxis: {
+                color: 'white',
+                gridcolor: '#444',
+                automargin: true,
+                title: { text: yAxisTitle, font: { color: 'white', size: 12 }, standoff: 12 }
+            }
         };
+        if (y_range !== undefined && y_range !== null) {
+            layout.yaxis.range = y_range;
+        }
         Plotly.newPlot(divId, data, layout, { responsive: true });
     } catch (e) {
         // If Plotly fails to load, skip charts gracefully
         console.warn('Plotly unavailable, skipping charts.', e);
     }
 }
-createPlotlyChart('qxPlot', 'q_x', '#ff6384', [-1, 1]);
-createPlotlyChart('qyPlot', 'q_y', '#36a2eb', [-1, 1]);
-createPlotlyChart('qzPlot', 'q_z', '#4bc0c0', [-1, 1]);
-createPlotlyChart('qwPlot', 'q_w (scalar)', '#e6e600', [-1, 1]);
-createPlotlyChart('pPlot', 'Roll Rate', '#ff9f40', [-5, 5]);
-createPlotlyChart('qPlot', 'Pitch Rate', '#9966ff', [-5, 5]);
-createPlotlyChart('rPlot', 'Yaw Rate', '#c9cbcf', [-5, 5]);
+createPlotlyChart('qxPlot', 'q<sub>x</sub>', '#ff6384', [-1, 1]);
+createPlotlyChart('qyPlot', 'q<sub>y</sub>', '#36a2eb', [-1, 1]);
+createPlotlyChart('qzPlot', 'q<sub>z</sub>', '#4bc0c0', [-1, 1]);
+createPlotlyChart('qwPlot', 'q<sub>w</sub>', '#e6e600', [-1, 1]);
+createPlotlyChart('pPlot', 'ω<sub>x</sub>', '#ff9f40', null);
+createPlotlyChart('qPlot', 'ω<sub>y</sub>', '#9966ff', null);
+createPlotlyChart('rPlot', 'ω<sub>z</sub>', '#c9cbcf', null);
+
+function relabelAxes() {
+    // No x-axis label, and omega y-axis labels without units
+    Plotly.relayout('pPlot', { 'yaxis.title.text': 'ω<sub>x</sub>' });
+    Plotly.relayout('qPlot', { 'yaxis.title.text': 'ω<sub>y</sub>' });
+    Plotly.relayout('rPlot', { 'yaxis.title.text': 'ω<sub>z</sub>' });
+}
+
+function rebuildSeriesUpTo(index) {
+    if (!dataset) return;
+    const i = Math.min(index, dataset.t.length - 1);
+    const tf = getTimeFactor();
+    const of = getOmegaFactor();
+    const xArr = dataset.t.slice(0, i + 1).map(t => t * tf);
+    const mapAndRestyle = (id, y) => {
+        Plotly.restyle(id, { x: [xArr], y: [y] }, [0]);
+    };
+    mapAndRestyle('qxPlot', dataset.qx.slice(0, i + 1));
+    mapAndRestyle('qyPlot', dataset.qy.slice(0, i + 1));
+    mapAndRestyle('qzPlot', dataset.qz.slice(0, i + 1));
+    mapAndRestyle('qwPlot', dataset.qw.slice(0, i + 1));
+    mapAndRestyle('pPlot', dataset.p.slice(0, i + 1).map(v => v * of));
+    mapAndRestyle('qPlot', dataset.q.slice(0, i + 1).map(v => v * of));
+    mapAndRestyle('rPlot', dataset.r.slice(0, i + 1).map(v => v * of));
+}
 
 // WebSocket & Controls
 const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -158,25 +217,21 @@ function updateAllVisuals(index, isScrubbing = false) {
 
     if (isScrubbing) {
         if (typeof Plotly !== 'undefined') {
-            for (let j = 0; j < allPlots.length; j++) {
-                const trace = {
-                    x: [dataset.t.slice(0, i + 1)],
-                    y: [dataset[dataKeys[j]].slice(0, i + 1)]
-                };
-                Plotly.restyle(allPlots[j], trace, [0]);
-            }
+            rebuildSeriesUpTo(i);
         }
     } else {
         if (typeof Plotly !== 'undefined') {
-            const tx = dataset.t[i];
+            const tf = getTimeFactor();
+            const of = getOmegaFactor();
+            const tx = dataset.t[i] * tf;
             const traceIndices = [0];
             Plotly.extendTraces('qxPlot',  { x: [[tx]], y: [[dataset.qx[i]]] }, traceIndices);
             Plotly.extendTraces('qyPlot', { x: [[tx]], y: [[dataset.qy[i]]] }, traceIndices);
             Plotly.extendTraces('qzPlot',   { x: [[tx]], y: [[dataset.qz[i]]] }, traceIndices);
             Plotly.extendTraces('qwPlot',   { x: [[tx]], y: [[dataset.qw[i]]] }, traceIndices);
-            Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i]]] }, traceIndices);
-            Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i]]] }, traceIndices);
-            Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i]]] }, traceIndices);
+            Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i] * of]] }, traceIndices);
+            Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i] * of]] }, traceIndices);
+            Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i] * of]] }, traceIndices);
         }
     }
 }
@@ -251,6 +306,7 @@ function startPlaybackFromDataset(data, m=null) {
             Plotly.restyle('pPlot', { x: [[]], y: [[]] }, [0]);
             Plotly.restyle('qPlot', { x: [[]], y: [[]] }, [0]);
             Plotly.restyle('rPlot', { x: [[]], y: [[]] }, [0]);
+            relabelAxes();
         } catch (e) {
             console.warn('Plotly restyle failed, continuing.', e);
         }
@@ -343,6 +399,20 @@ socket.onmessage = (event) => {
 
 socket.onclose = () => {};
 socket.onerror = () => {};
+
+// Unit controls handlers
+if (timeUnitSelect) {
+    timeUnitSelect.addEventListener('change', () => {
+        relabelAxes();
+        rebuildSeriesUpTo(frameIndex);
+    });
+}
+if (omegaUnitSelect) {
+    omegaUnitSelect.addEventListener('change', () => {
+        relabelAxes();
+        rebuildSeriesUpTo(frameIndex);
+    });
+}
 
 // Animation loop
 function animate() {
