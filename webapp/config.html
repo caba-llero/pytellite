@@ -12,6 +12,8 @@
         .config-card { background: #101214; border: 1px solid #1f242b; border-radius: 12px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
         .config-header { position: sticky; top: 0; background: #0b0b0b; padding: 10px 0 16px 0; z-index: 20; display: flex; align-items: center; gap: 12px; }
         .start-btn { background: linear-gradient(135deg, #006896, #0091c7); color: white; border: none; padding: 10px 16px; cursor: pointer; border-radius: 8px; font-weight: 600; letter-spacing: 0.2px; margin-left: auto; }
+        .header-link { color: #aeb6c2; text-decoration: none; font-size: 14px; font-weight: 500; margin-left: 16px; }
+        .header-link:hover { color: #ffffff; }
         .tabs { display: flex; gap: 8px; border-bottom: 1px solid #1f242b; margin-bottom: 12px; overflow-x: auto; }
         .tab { background: transparent; border: none; color: #aeb6c2; padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; border-top-left-radius: 8px; border-top-right-radius: 8px; }
         .tab:hover { color: #e6eefc; }
@@ -45,6 +47,8 @@
     <div class="config-container">
         <div class="config-header">
             <img src="/logo.png" alt="Logo" class="config-logo">
+            <a href="https://caba.lle.ro/pytellite" target="_blank" class="header-link">About</a>
+            <a href="https://caba.lle.ro/pytellite#changelog" target="_blank" class="header-link">Changelog</a>
             <button id="startBtn" class="start-btn">Start simulation</button>
         </div>
 

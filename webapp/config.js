@@ -37,7 +37,11 @@ async function init() {
     const rtol = sim.rtol ?? 1e-12;
     const atol = sim.atol ?? 1e-12;
     const control = saved.control || defaults.control || { control_type: 'none', kp: 0.0, kd: 0.0, qc: [0,0,0,1] };
-    const ctrlType = control.control_type === 'tracking' ? 'inertial' : (control.control_type || 'none');
+    
+    let ctrlType = control.control_type || 'none';
+    if (ctrlType === 'tracking') ctrlType = 'inertial';
+    if (ctrlType === 'zero_torque') ctrlType = 'none';
+
     const kp = control.kp ?? 0.0;
     const kd = control.kd ?? 0.0;
     const [cq0, cq1, cq2, cq3] = control.qc || [0,0,0,1];
