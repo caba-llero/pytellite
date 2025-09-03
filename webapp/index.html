@@ -10,18 +10,18 @@
 <body>
     <div id="container">
         <div id="left-panel">
-            <img src="/logo.png" alt="Logo" id="site-logo">
+            <div id="logo-row">
+                <img src="/logo.png" alt="Logo" id="site-logo">
+                <button id="config-btn" class="config-btn" type="button">Change configuration</button>
+            </div>
             <div class="tabs" role="tablist">
-                <button class="tab active" data-tab="a" role="tab" aria-selected="true">Tab A</button>
-                <button class="tab" data-tab="b" role="tab" aria-selected="false">Tab B</button>
+                <button class="tab active" data-tab="legend" role="tab" aria-selected="true">Legend</button>
+                <button class="tab" data-tab="plots" role="tab" aria-selected="false">Plots</button>
+                <button class="tab" data-tab="axes" role="tab" aria-selected="false">Axes</button>
+                <button class="tab" data-tab="other" role="tab" aria-selected="false">Other</button>
             </div>
             <div class="panels">
-                <section class="tab-panel active" data-tab="a" role="tabpanel">
-                    <div id="euler-angles">Not Connected</div>
-                    <div id="metrics" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
-                    <div style="margin-top:8px">
-                        <a href="/" style="color:#006896;text-decoration:none">Change configuration</a>
-                    </div>
+                <section class="tab-panel active" data-tab="legend" role="tabpanel">
                     <div id="legend">
                         <div class="legend-section">
                             <span class="legend-line solid"></span>
@@ -38,8 +38,11 @@
                         </div>
                     </div>
                 </section>
-                <section class="tab-panel" data-tab="b" role="tabpanel">
-                    <div style="color:#9aa4b2;font-size:13px">Placeholder content for Tab B.</div>
+                <section class="tab-panel" data-tab="plots" role="tabpanel"></section>
+                <section class="tab-panel" data-tab="axes" role="tabpanel"></section>
+                <section class="tab-panel" data-tab="other" role="tabpanel">
+                    <div id="sim-info" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
+                    <div id="metrics" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
                 </section>
             </div>
         </div>
@@ -60,11 +63,12 @@
         </div>
         <div id="plots-container">
             <div class="plot-column">
-                <div id="rollPlot" class="plot-wrapper"></div>
-                <div id="pitchPlot" class="plot-wrapper"></div>
-                <div id="yawPlot" class="plot-wrapper"></div>
+                <div id="qxPlot" class="plot-wrapper"></div>
+                <div id="qyPlot" class="plot-wrapper"></div>
+                <div id="qzPlot" class="plot-wrapper"></div>
             </div>
             <div class="plot-column">
+                <div id="qwPlot" class="plot-wrapper"></div>
                 <div id="pPlot" class="plot-wrapper"></div>
                 <div id="qPlot" class="plot-wrapper"></div>
                 <div id="rPlot" class="plot-wrapper"></div>

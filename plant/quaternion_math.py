@@ -260,6 +260,22 @@ def slerp_array(t_sampled: np.ndarray, t0: np.ndarray, q0: np.ndarray  ) -> np.n
     return slerp(t_sampled).as_euler('zyx', degrees=False).T
 
 
+def slerp_quat_array(t_sampled: np.ndarray, t0: np.ndarray, q0: np.ndarray) -> np.ndarray:
+    """Spherical linear interpolation returning quaternion components.
+    
+    Args:
+        t_sampled: 1D array of sample times
+        t0: 1D array of keyframe times
+        q0: (4, N) quaternion keyframes with scalar-last convention [x, y, z, w]
+
+    Returns:
+        (4, M) array of interpolated quaternions [x, y, z, w] across t_sampled
+    """
+    rotations = R.from_quat(q0.T)
+    interpolator = Slerp(t0, rotations)
+    return interpolator(t_sampled).as_quat().T
+
+
 
 
 

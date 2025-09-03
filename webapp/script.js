@@ -1,6 +1,7 @@
 // --- Basic Setup ---
-const eulerDiv = document.getElementById('euler-angles');
 const metricsDiv = document.getElementById('metrics');
+const simInfoDiv = document.getElementById('sim-info');
+const configBtn = document.getElementById('config-btn');
 // Simple tabs behavior for left panel
 document.querySelectorAll('#left-panel .tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -20,7 +21,7 @@ const playPauseBtn = document.getElementById('playPauseBtn');
 const timelineSlider = document.getElementById('timelineSlider');
 const timeLabel = document.getElementById('timeLabel');
 
-let latestAngles = { roll: 0, pitch: 0, yaw: 0 };
+let latestQuat = { x: 0, y: 0, z: 0, w: 1 };
 let isPaused = false;
 
 function fmtTime(seconds) {
@@ -32,9 +33,10 @@ function fmtTime(seconds) {
 
 // --- 3D Scene Setup ---
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(75, rendererContainer.clientWidth / rendererContainer.clientHeight, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(rendererContainer.clientWidth, rendererContainer.clientHeight);
+renderer.setPixelRatio(window.devicePixelRatio || 1);
+renderer.setSize(window.innerWidth, window.innerHeight);
 rendererContainer.appendChild(renderer.domElement);
 const controls = new THREE.OrbitControls(camera, mainVis);
 controls.enableDamping = true;
@@ -119,9 +121,10 @@ function createPlotlyChart(divId, title, color, y_range) {
         console.warn('Plotly unavailable, skipping charts.', e);
     }
 }
-createPlotlyChart('rollPlot', 'Roll (X)', '#ff6384', [-Math.PI, Math.PI]);
-createPlotlyChart('pitchPlot', 'Pitch (Y)', '#36a2eb', [-Math.PI, Math.PI]);
-createPlotlyChart('yawPlot', 'Yaw (Z)', '#4bc0c0', [-Math.PI, Math.PI]);
+createPlotlyChart('qxPlot', 'q_x', '#ff6384', [-1, 1]);
+createPlotlyChart('qyPlot', 'q_y', '#36a2eb', [-1, 1]);
+createPlotlyChart('qzPlot', 'q_z', '#4bc0c0', [-1, 1]);
+createPlotlyChart('qwPlot', 'q_w (scalar)', '#e6e600', [-1, 1]);
 createPlotlyChart('pPlot', 'Roll Rate', '#ff9f40', [-5, 5]);
 createPlotlyChart('qPlot', 'Pitch Rate', '#9966ff', [-5, 5]);
 createPlotlyChart('rPlot', 'Yaw Rate', '#c9cbcf', [-5, 5]);
@@ -146,12 +149,12 @@ function updateTimeLabel(i) {
 function updateAllVisuals(index, isScrubbing = false) {
     if (!dataset || index < 0 || index >= dataset.t.length) return;
     const i = Math.min(index, dataset.t.length - 1);
-    latestAngles = { roll: dataset.roll[i], pitch: dataset.pitch[i], yaw: dataset.yaw[i] };
+    latestQuat = { x: dataset.qx[i], y: dataset.qy[i], z: dataset.qz[i], w: dataset.qw[i] };
     timelineSlider.value = i;
     updateTimeLabel(i);
 
-    const allPlots = ['rollPlot', 'pitchPlot', 'yawPlot', 'pPlot', 'qPlot', 'rPlot'];
-    const dataKeys = ['roll', 'pitch', 'yaw', 'p', 'q', 'r'];
+    const allPlots = ['qxPlot', 'qyPlot', 'qzPlot', 'qwPlot', 'pPlot', 'qPlot', 'rPlot'];
+    const dataKeys = ['qx', 'qy', 'qz', 'qw', 'p', 'q', 'r'];
 
     if (isScrubbing) {
         if (typeof Plotly !== 'undefined') {
@@ -167,9 +170,10 @@ function updateAllVisuals(index, isScrubbing = false) {
         if (typeof Plotly !== 'undefined') {
             const tx = dataset.t[i];
             const traceIndices = [0];
-            Plotly.extendTraces('rollPlot',  { x: [[tx]], y: [[dataset.roll[i]]] }, traceIndices);
-            Plotly.extendTraces('pitchPlot', { x: [[tx]], y: [[dataset.pitch[i]]] }, traceIndices);
-            Plotly.extendTraces('yawPlot',   { x: [[tx]], y: [[dataset.yaw[i]]] }, traceIndices);
+            Plotly.extendTraces('qxPlot',  { x: [[tx]], y: [[dataset.qx[i]]] }, traceIndices);
+            Plotly.extendTraces('qyPlot', { x: [[tx]], y: [[dataset.qy[i]]] }, traceIndices);
+            Plotly.extendTraces('qzPlot',   { x: [[tx]], y: [[dataset.qz[i]]] }, traceIndices);
+            Plotly.extendTraces('qwPlot',   { x: [[tx]], y: [[dataset.qw[i]]] }, traceIndices);
             Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i]]] }, traceIndices);
             Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i]]] }, traceIndices);
             Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i]]] }, traceIndices);
@@ -212,16 +216,38 @@ function renderMetrics(m) {
     metricsDiv.innerHTML = html;
 }
 
+function renderSimInfo(m) {
+    if (!simInfoDiv) return;
+    const totalTime = (dataset && dataset.t && dataset.t.length > 0) ? dataset.t[dataset.t.length - 1] : (m && m.simulation_time_s) || 0;
+    const numSamples = (dataset && dataset.t && dataset.t.length) || (m && m.num_integration_points) || 0;
+    const sr = (dataset && dataset.sample_rate) || (m && m.sample_rate) || '—';
+    const pbs = (m && m.playback_speed) || 1;
+    const tmax = (m && m.t_max) || (typeof totalTime === 'number' ? totalTime : '—');
+    const rows = [
+        ['Sim time', `${(Number(totalTime) || 0).toFixed(2)} s`],
+        ['Samples (N)', `${numSamples}`],
+        ['Sample rate', `${sr} Hz`],
+        ['Playback speed', `${pbs}x`],
+        ['t_max', `${tmax} s`]
+    ];
+    const html = rows.map(([k,v]) => `<div><span style="color:#8fa1b3">${k}:</span> <span style="color:#e6eefc">${v}</span></div>`).join('');
+    simInfoDiv.innerHTML = html;
+}
+
 function startPlaybackFromDataset(data, m=null) {
     dataset = data;
     metrics = m;
-    if (metrics) renderMetrics(metrics);
+    if (metrics) {
+        renderMetrics(metrics);
+        renderSimInfo(metrics);
+    }
     frameIndex = 0;
     if (typeof Plotly !== 'undefined') {
         try {
-            Plotly.restyle('rollPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('pitchPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('yawPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('qxPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('qyPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('qzPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('qwPlot', { x: [[]], y: [[]] }, [0]);
             Plotly.restyle('pPlot', { x: [[]], y: [[]] }, [0]);
             Plotly.restyle('qPlot', { x: [[]], y: [[]] }, [0]);
             Plotly.restyle('rPlot', { x: [[]], y: [[]] }, [0]);
@@ -263,7 +289,6 @@ function startPlaybackFromDataset(data, m=null) {
 })();
 
 socket.onopen = () => {
-    eulerDiv.innerHTML = "Connected";
     if (precomputedDataLoaded) {
         return;
     }
@@ -316,29 +341,22 @@ socket.onmessage = (event) => {
     }
 };
 
-socket.onclose = () => eulerDiv.innerHTML = "Connection Closed.";
-socket.onerror = () => eulerDiv.innerHTML = "Connection Error!";
+socket.onclose = () => {};
+socket.onerror = () => {};
 
 // Animation loop
 function animate() {
     requestAnimationFrame(animate);
-    cuboid.rotation.x = latestAngles.roll;
-    cuboid.rotation.y = latestAngles.pitch;
-    cuboid.rotation.z = latestAngles.yaw;
+    cuboid.quaternion.set(latestQuat.x, latestQuat.y, latestQuat.z, latestQuat.w);
     controls.update();
-    eulerDiv.innerHTML = `
-        Roll: ${latestAngles.roll.toFixed(2)}<br>
-        Pitch: ${latestAngles.pitch.toFixed(2)}<br>
-        Yaw: ${latestAngles.yaw.toFixed(2)}
-    `;
     renderer.render(scene, camera);
 }
 animate();
 
 window.addEventListener('resize', () => {
-    camera.aspect = rendererContainer.clientWidth / rendererContainer.clientHeight;
+    camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(rendererContainer.clientWidth, rendererContainer.clientHeight);
+    renderer.setSize(window.innerWidth, window.innerHeight);
     repositionRenderer();
 }, false);
 
@@ -347,5 +365,12 @@ const playerControlsEl = document.getElementById('playerControls');
 if (playerControlsEl) {
     ['pointerdown', 'mousedown', 'touchstart', 'wheel'].forEach(evt => {
         playerControlsEl.addEventListener(evt, e => e.stopPropagation());
+    });
+}
+
+// Change configuration button behavior
+if (configBtn) {
+    configBtn.addEventListener('click', () => {
+        window.location.href = '/';
     });
 }

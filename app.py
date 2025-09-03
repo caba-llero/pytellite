@@ -183,15 +183,18 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
         t0 = time.perf_counter()
         t, y = plant.compute_states(**args)
         t_compute = time.perf_counter() - t0
-        t_s, r_s, v_s, eul_s, w_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
-        yaw_arr = eul_s[0, :].tolist()
-        pitch_arr = eul_s[1, :].tolist()
-        roll_arr = eul_s[2, :].tolist()
+        t_s, r_s, v_s, eul_s, w_s, q_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+        # Quaternion components (scalar last): qx, qy, qz, qw
+        qx_arr = q_s[0, :].tolist()
+        qy_arr = q_s[1, :].tolist()
+        qz_arr = q_s[2, :].tolist()
+        qw_arr = q_s[3, :].tolist()
         dataset = {
             "t": t_s.tolist(),
-            "roll": roll_arr,
-            "pitch": pitch_arr,
-            "yaw": yaw_arr,
+            "qx": qx_arr,
+            "qy": qy_arr,
+            "qz": qz_arr,
+            "qw": qw_arr,
             "p": w_s[0, :].tolist(),
             "q": w_s[1, :].tolist(),
             "r": w_s[2, :].tolist(),
@@ -279,16 +282,18 @@ async def websocket_endpoint(websocket: WebSocket):
             t0 = time.perf_counter()
             t, y = plant.compute_states(**args)
             t_compute = time.perf_counter() - t0
-            t_s, r_s, v_s, eul_s, w_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
-            # eul_s is (3, N) in ZYX order -> yaw, pitch, roll. Reorder to roll, pitch, yaw
-            yaw_arr = eul_s[0, :].tolist()
-            pitch_arr = eul_s[1, :].tolist()
-            roll_arr = eul_s[2, :].tolist()
+            t_s, r_s, v_s, eul_s, w_s, q_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+            # Quaternion components (scalar last): qx, qy, qz, qw
+            qx_arr = q_s[0, :].tolist()
+            qy_arr = q_s[1, :].tolist()
+            qz_arr = q_s[2, :].tolist()
+            qw_arr = q_s[3, :].tolist()
             dataset = {
                 "t": t_s.tolist(),
-                "roll": roll_arr,
-                "pitch": pitch_arr,
-                "yaw": yaw_arr,
+                "qx": qx_arr,
+                "qy": qy_arr,
+                "qz": qz_arr,
+                "qw": qw_arr,
                 "p": w_s[0, :].tolist(),
                 "q": w_s[1, :].tolist(),
                 "r": w_s[2, :].tolist(),

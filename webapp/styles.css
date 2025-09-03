@@ -108,6 +108,7 @@ body {
     padding: 10px 12px;
     border-radius: 12px;
     backdrop-filter: blur(6px);
+    z-index: 4;
 }
 .play-pause-btn {
     width: 36px;
@@ -169,6 +170,21 @@ body {
     max-height: 75px;
     margin-bottom: 8px;
 }
+
+/* Logo row with config button */
+#logo-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+#logo-row #site-logo { margin: 0; max-height: 60px; }
+.config-btn {
+    background: linear-gradient(135deg, #006896, #0091c7);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.config-btn:hover { filter: brightness(1.08); }
 
 /* Tabs for left panel */
 .tabs { display: flex; gap: 8px; border-bottom: 1px solid #1f242b; margin: 8px 0 12px 0; overflow-x: auto; }

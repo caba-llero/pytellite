@@ -29,16 +29,16 @@ except ImportError:
 try:
     # Try relative imports (when run as module)
     from .dynamics import rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial, state_deriv
-    from .quaternion_math import slerp_array, rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
+    from .quaternion_math import slerp_array, slerp_quat_array, rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
 except ImportError:
     # Fall back to absolute imports (when imported by other scripts)
     try:
         from plant.dynamics import state_deriv, rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
-        from plant.quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
+        from plant.quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix, slerp_quat_array
     except ImportError:
         # Last resort: import as if we're in the plant package directory
         from dynamics import state_deriv, rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
-        from quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
+        from quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix, slerp_quat_array
 
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
@@ -124,8 +124,11 @@ class Plant:
         r_sampled = y_sampled[0:3]  
         v_sampled = y_sampled[3:6]
         w_sampled = y_sampled[6:9]
+        # Interpolate attitude quaternions (scalar-last [x, y, z, w])
+        q_sampled = slerp_quat_array(t_sampled, t, y[9:13])
+        # Keep Euler for legacy uses if needed
         euler_sampled = slerp_array(t_sampled, t, y[9:13])
-        return t_sampled, r_sampled, v_sampled, euler_sampled, w_sampled
+        return t_sampled, r_sampled, v_sampled, euler_sampled, w_sampled, q_sampled
 
 
 ### DEPRECATED
