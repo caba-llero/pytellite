@@ -5,7 +5,7 @@ simulation:
   rng_seed: 12345
   t_final: 5.0
   # Precomputation defaults for GUI playback
-  t_max: 1000.0
+  t_max: 300.0
   playback_speed: 1.0
   sample_rate: 30.0
   rtol: 1.0e-12
@@ -13,8 +13,8 @@ simulation:
 
 spacecraft:
   mass: 10.0
-  inertia: [2,2,1]
-  shape: [0.1, 0.1, 0.3]
+  inertia: [10000,9000,12000]
+  shape: [1, 0.9, 1.2]
 
 sensors:
   gps:
