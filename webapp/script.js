@@ -15,6 +15,7 @@ document.querySelectorAll('#left-panel .tab').forEach(tab => {
     });
 });
 const rendererContainer = document.getElementById('renderer-container');
+const mainVis = document.getElementById('main-vis');
 const playPauseBtn = document.getElementById('playPauseBtn');
 const timelineSlider = document.getElementById('timelineSlider');
 const timeLabel = document.getElementById('timeLabel');
@@ -35,7 +36,7 @@ const camera = new THREE.PerspectiveCamera(75, rendererContainer.clientWidth / r
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(rendererContainer.clientWidth, rendererContainer.clientHeight);
 rendererContainer.appendChild(renderer.domElement);
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const controls = new THREE.OrbitControls(camera, mainVis);
 controls.enableDamping = true;
 camera.position.set(4, 4, 4);
 
@@ -81,6 +82,24 @@ createAxis(scene, [0, 0, 1], 0x0000ff, 5, false);
 createAxis(cuboid, [1, 0, 0], 0xff0000, 3, true);
 createAxis(cuboid, [0, 1, 0], 0x00ff00, 3, true);
 createAxis(cuboid, [0, 0, 1], 0x0000ff, 3, true);
+
+// Keep the 3D view visually centered on the center panel while allowing spill under the left panel
+function repositionRenderer() {
+    try {
+        const container = document.getElementById('container');
+        const leftPanel = document.getElementById('left-panel');
+        const plots = document.getElementById('plots-container');
+        if (!container || !leftPanel || !plots) return;
+        const W = container.clientWidth;
+        const leftW = leftPanel.offsetWidth;
+        const rightW = plots.offsetWidth;
+        const dx = (leftW - rightW) / 2; // shift so scene center aligns with center panel center
+        rendererContainer.style.transform = `translateX(${dx}px)`;
+    } catch (_) {
+        // no-op
+    }
+}
+repositionRenderer();
 
 // Plotly charts
 function createPlotlyChart(divId, title, color, y_range) {
@@ -320,4 +339,13 @@ window.addEventListener('resize', () => {
     camera.aspect = rendererContainer.clientWidth / rendererContainer.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(rendererContainer.clientWidth, rendererContainer.clientHeight);
+    repositionRenderer();
 }, false);
+
+// Prevent player controls from affecting OrbitControls interactions
+const playerControlsEl = document.getElementById('playerControls');
+if (playerControlsEl) {
+    ['pointerdown', 'mousedown', 'touchstart', 'wheel'].forEach(evt => {
+        playerControlsEl.addEventListener(evt, e => e.stopPropagation());
+    });
+}

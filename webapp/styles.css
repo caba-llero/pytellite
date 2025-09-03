@@ -9,6 +9,7 @@ body {
     display: flex;
     width: 100vw;
     height: 100vh;
+    position: relative;
 }
 #left-panel {
     width: 320px;
@@ -16,18 +17,26 @@ body {
     max-width: 420px;
     height: 100vh;
     overflow: auto;
-    background-color: #0f1318;
-    border-right: 1px solid #1d2229;
+    background-color: rgba(0, 0, 0, 0.65);
+    border-right: 1px solid rgba(255,255,255,0.08);
     box-sizing: border-box;
     padding: 10px;
+    z-index: 3;
 }
 #main-vis {
     flex: 1;
     position: relative;
+    overflow: hidden; /* keep player controls within center panel */
+    z-index: 2;
 }
 #renderer-container {
-    width: 100%;
-    height: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1; /* behind panels */
+    pointer-events: none; /* let center UI receive interactions; controls attach to center panel */
 }
 #plots-container {
     flex: 1; /* 1/3 of the width */
@@ -36,6 +45,7 @@ body {
     background-color: #1a1a1a;
     padding: 10px;
     box-sizing: border-box;
+    z-index: 3;
 }
 .plot-column {
     flex: 1;
