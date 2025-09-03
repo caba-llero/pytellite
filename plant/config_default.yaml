@@ -52,6 +52,13 @@ watchdog:
 logging:
   replay_file: logs/replay.ndjson
 
+# Default control parameters
+control:
+  control_type: none # none | tracking (inertial pointing)
+  kp: 0.0
+  kd: 0.0
+  qc: [0.0, 0.0, 0.0, 1.0]
+
 initial_conditions:
   # ~500 km circular orbit around Earth, ECI position on x-axis.
   r_eci_m: [6871000.0, 0.0, 0.0]
@@ -69,8 +76,8 @@ initial_conditions:
   omega_bo_radps: [0.2, -0.1, 0.3]
 
   # Inertial frame initial conditions
-  q_bi: [0.1494, 0.1494, 0.1494, 0.9659]
-  omega_bi_radps: [0.03, 0.02, 0.1]
+  q_bi: [0.6853, 0.6953, 0.1531, 0.1531]
+  omega_bi_radps: [0.00925, 0.00925, 0.000925]
 
 
 

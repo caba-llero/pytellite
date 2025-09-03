@@ -70,15 +70,21 @@ createAxis(cuboid, [0, 0, 1], 0x0000ff, 3, true);
 
 // Plotly charts
 function createPlotlyChart(divId, title, color, y_range) {
-    const data = [{ x: [], y: [], type: 'scatter', mode: 'lines', line: { color: color, width: 2 } }];
-    const layout = {
-        title: { text: title, font: { color: 'white', size: 14 } },
-        paper_bgcolor: '#1a1a1a', plot_bgcolor: '#1a1a1a',
-        margin: { l: 40, r: 20, b: 30, t: 40, pad: 4 },
-        xaxis: { color: 'white', gridcolor: '#444' },
-        yaxis: { color: 'white', gridcolor: '#444', range: y_range }
-    };
-    Plotly.newPlot(divId, data, layout, { responsive: true });
+    try {
+        if (typeof Plotly === 'undefined') return;
+        const data = [{ x: [], y: [], type: 'scatter', mode: 'lines', line: { color: color, width: 2 } }];
+        const layout = {
+            title: { text: title, font: { color: 'white', size: 14 } },
+            paper_bgcolor: '#1a1a1a', plot_bgcolor: '#1a1a1a',
+            margin: { l: 40, r: 20, b: 30, t: 40, pad: 4 },
+            xaxis: { color: 'white', gridcolor: '#444' },
+            yaxis: { color: 'white', gridcolor: '#444', range: y_range }
+        };
+        Plotly.newPlot(divId, data, layout, { responsive: true });
+    } catch (e) {
+        // If Plotly fails to load, skip charts gracefully
+        console.warn('Plotly unavailable, skipping charts.', e);
+    }
 }
 createPlotlyChart('rollPlot', 'Roll (X)', '#ff6384', [-Math.PI, Math.PI]);
 createPlotlyChart('pitchPlot', 'Pitch (Y)', '#36a2eb', [-Math.PI, Math.PI]);
@@ -113,22 +119,26 @@ function updateAllVisuals(index, isScrubbing = false) {
     const dataKeys = ['roll', 'pitch', 'yaw', 'p', 'q', 'r'];
 
     if (isScrubbing) {
-        for (let j = 0; j < allPlots.length; j++) {
-            const trace = {
-                x: [dataset.t.slice(0, i + 1)],
-                y: [dataset[dataKeys[j]].slice(0, i + 1)]
-            };
-            Plotly.restyle(allPlots[j], trace, [0]);
+        if (typeof Plotly !== 'undefined') {
+            for (let j = 0; j < allPlots.length; j++) {
+                const trace = {
+                    x: [dataset.t.slice(0, i + 1)],
+                    y: [dataset[dataKeys[j]].slice(0, i + 1)]
+                };
+                Plotly.restyle(allPlots[j], trace, [0]);
+            }
         }
     } else {
-        const tx = dataset.t[i];
-        const traceIndices = [0];
-        Plotly.extendTraces('rollPlot',  { x: [[tx]], y: [[dataset.roll[i]]] }, traceIndices);
-        Plotly.extendTraces('pitchPlot', { x: [[tx]], y: [[dataset.pitch[i]]] }, traceIndices);
-        Plotly.extendTraces('yawPlot',   { x: [[tx]], y: [[dataset.yaw[i]]] }, traceIndices);
-        Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i]]] }, traceIndices);
-        Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i]]] }, traceIndices);
-        Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i]]] }, traceIndices);
+        if (typeof Plotly !== 'undefined') {
+            const tx = dataset.t[i];
+            const traceIndices = [0];
+            Plotly.extendTraces('rollPlot',  { x: [[tx]], y: [[dataset.roll[i]]] }, traceIndices);
+            Plotly.extendTraces('pitchPlot', { x: [[tx]], y: [[dataset.pitch[i]]] }, traceIndices);
+            Plotly.extendTraces('yawPlot',   { x: [[tx]], y: [[dataset.yaw[i]]] }, traceIndices);
+            Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i]]] }, traceIndices);
+            Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i]]] }, traceIndices);
+            Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i]]] }, traceIndices);
+        }
     }
 }
 
@@ -155,27 +165,57 @@ timelineSlider.addEventListener('input', () => {
     }
 });
 
+function startPlaybackFromDataset(data) {
+    dataset = data;
+    frameIndex = 0;
+    if (typeof Plotly !== 'undefined') {
+        try {
+            Plotly.restyle('rollPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('pitchPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('yawPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('pPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('qPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('rPlot', { x: [[]], y: [[]] }, [0]);
+        } catch (e) {
+            console.warn('Plotly restyle failed, continuing.', e);
+        }
+    }
+    timelineSlider.max = dataset.t.length - 1;
+    updateAllVisuals(0, true);
+    setPlayingState(true);
+    if (playbackTimer) clearInterval(playbackTimer);
+    const intervalMs = 1000.0 / (dataset.sample_rate || 30.0);
+    playbackTimer = setInterval(() => {
+        if (!dataset || isPaused) return;
+        const n = dataset.t.length;
+        if (n === 0 || frameIndex >= n - 1) return;
+        frameIndex++;
+        updateAllVisuals(frameIndex);
+    }, intervalMs);
+}
+
+// Attempt to start from precomputed dataset immediately (without waiting for WS)
+(function tryPrecomputedPlayback() {
+    const pre = sessionStorage.getItem('precomputed_dataset');
+    if (pre) {
+        try {
+            const data = JSON.parse(pre);
+            startPlaybackFromDataset(data);
+            sessionStorage.removeItem('precomputed_dataset');
+        } catch (e) {
+            console.warn('Failed to parse precomputed dataset.', e);
+        }
+    }
+})();
+
 socket.onopen = () => {
     eulerDiv.innerHTML = "Connected";
     const pre = sessionStorage.getItem('precomputed_dataset');
     if (pre) {
         try {
             const data = JSON.parse(pre);
-            dataset = data;
+            startPlaybackFromDataset(data);
             sessionStorage.removeItem('precomputed_dataset');
-            frameIndex = 0;
-            timelineSlider.max = dataset.t.length - 1;
-            updateAllVisuals(0, true);
-            setPlayingState(true);
-            if (playbackTimer) clearInterval(playbackTimer);
-            const intervalMs = 1000.0 / (dataset.sample_rate || 30.0);
-            playbackTimer = setInterval(() => {
-                if (!dataset || isPaused) return;
-                const n = dataset.t.length;
-                if (n === 0 || frameIndex >= n - 1) return;
-                frameIndex++;
-                updateAllVisuals(frameIndex);
-            }, intervalMs);
             return;
         } catch {}
     }
@@ -224,28 +264,7 @@ socket.onopen = () => {
 socket.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.dataset) {
-        dataset = msg.dataset;
-        frameIndex = 0;
-        Plotly.restyle('rollPlot', { x: [[]], y: [[]] }, [0]);
-        Plotly.restyle('pitchPlot', { x: [[]], y: [[]] }, [0]);
-        Plotly.restyle('yawPlot', { x: [[]], y: [[]] }, [0]);
-        Plotly.restyle('pPlot', { x: [[]], y: [[]] }, [0]);
-        Plotly.restyle('qPlot', { x: [[]], y: [[]] }, [0]);
-        Plotly.restyle('rPlot', { x: [[]], y: [[]] }, [0]);
-        timelineSlider.max = dataset.t.length - 1;
-        updateAllVisuals(0, true);
-        setPlayingState(true);
-        if (playbackTimer) {
-            clearInterval(playbackTimer);
-        }
-        const intervalMs = 1000.0 / (dataset.sample_rate || 30.0);
-        playbackTimer = setInterval(() => {
-            if (!dataset || isPaused) return;
-            const n = dataset.t.length;
-            if (n === 0 || frameIndex >= n - 1) return;
-            frameIndex++;
-            updateAllVisuals(frameIndex);
-        }, intervalMs);
+        startPlaybackFromDataset(msg.dataset);
     }
 };
 

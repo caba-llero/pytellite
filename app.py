@@ -68,10 +68,10 @@ async def api_defaults():
             "atol": cfg["simulation"].get("atol", 1.0e-12),
         },
         "control": {
-            "control_type": "none",  # "none" | "inertial"
-            "kp": 0.0,
-            "kd": 0.0,
-            "qc": [0.0, 0.0, 0.0, 1.0],
+            "control_type": cfg.get("control", {}).get("control_type", "none"),
+            "kp": cfg.get("control", {}).get("kp", 0.0),
+            "kd": cfg.get("control", {}).get("kd", 0.0),
+            "qc": cfg.get("control", {}).get("qc", [0.0, 0.0, 0.0, 1.0]),
         },
     }
 
