@@ -100,6 +100,7 @@ const socket = new WebSocket(`${wsScheme}://${wsHost}/ws`);
 let dataset = null;
 let frameIndex = 0;
 let playbackTimer = null;
+let precomputedDataLoaded = false;
 
 function updateTimeLabel(i) {
     if (!dataset) return;
@@ -202,6 +203,7 @@ function startPlaybackFromDataset(data) {
             const data = JSON.parse(pre);
             startPlaybackFromDataset(data);
             sessionStorage.removeItem('precomputed_dataset');
+            precomputedDataLoaded = true;
         } catch (e) {
             console.warn('Failed to parse precomputed dataset.', e);
         }
@@ -210,14 +212,8 @@ function startPlaybackFromDataset(data) {
 
 socket.onopen = () => {
     eulerDiv.innerHTML = "Connected";
-    const pre = sessionStorage.getItem('precomputed_dataset');
-    if (pre) {
-        try {
-            const data = JSON.parse(pre);
-            startPlaybackFromDataset(data);
-            sessionStorage.removeItem('precomputed_dataset');
-            return;
-        } catch {}
+    if (precomputedDataLoaded) {
+        return;
     }
 
     // configure via websocket
