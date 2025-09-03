@@ -69,7 +69,6 @@ class Plant:
         # Spacecraft properties
         self.J = np.diag(cfg["spacecraft"]["inertia"])
         self.Ji = np.linalg.inv(self.J)
-        self.L = np.zeros(3) # No torque
 
         # Initial attitude state
         ic = cfg["initial_conditions"]
@@ -95,13 +94,23 @@ class Plant:
         else:
             raise ValueError(f"Invalid initial condition frame: {frame}")
 
-    def compute_states(self, t_max: float, rtol: float = 1e-12, atol: float = 1e-12) -> np.ndarray:
+    def compute_states(self, t_max: float, rtol: float = 1e-12, atol: float = 1e-12, 
+        control_type: Optional[str] = None, kp: Optional[float] = None, 
+        kd: Optional[float] = None, qc: Optional[Quaternion] = None) -> np.ndarray:
         """
         Compute the states of the plant over a given time range.
         """
         t_span = (0, t_max)
         y0 = np.hstack((self.r0, self.v0, self.w_bi, self.q_bi.q))
-        sol = solve_ivp(state_deriv, t_span, y0, args=(MU_EARTH, self.J, self.Ji, self.L), rtol=rtol, atol=atol)
+        
+        # Determine args for state_deriv based on provided control parameters
+        if control_type is not None and kp is not None and kd is not None and qc is not None:
+            args = (self.J, self.Ji, control_type, kp, kd, qc)
+        else:
+            # Fallback to zero_torque if control params are missing
+            args = (self.J, self.Ji, "zero_torque", 0.0, 0.0, Quaternion(0,0,0,1))
+            
+        sol = solve_ivp(state_deriv, t_span, y0, args=args, rtol=rtol, atol=atol)
         return sol.t, sol.y
 
     def evaluate_gui(self, t, y, playback_speed: float = 1.0, sample_rate: float = 30) -> np.ndarray:

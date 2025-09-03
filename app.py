@@ -6,6 +6,7 @@ from fastapi import Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from plant.sim import Plant
+from plant.quaternion_math import Quaternion
 import yaml
 
 # Ensure logs directory exists
@@ -66,6 +67,12 @@ async def api_defaults():
             "rtol": cfg["simulation"].get("rtol", 1.0e-12),
             "atol": cfg["simulation"].get("atol", 1.0e-12),
         },
+        "control": {
+            "control_type": "none",  # "none" | "inertial"
+            "kp": 0.0,
+            "kd": 0.0,
+            "qc": [0.0, 0.0, 0.0, 1.0],
+        },
     }
 
 
@@ -102,6 +109,33 @@ def merge_with_defaults(payload: dict) -> dict:
         cfg["simulation"]["rtol"] = rtol
     if atol is not None:
         cfg["simulation"]["atol"] = atol
+
+    # Control parameters (flat or nested)
+    ctrl_payload = payload.get("control", {}) if isinstance(payload.get("control"), dict) else payload
+    
+    control_type = ctrl_payload.get("control_type") or ctrl_payload.get("ctrl")
+    kp = ctrl_payload.get("kp")
+    kd = ctrl_payload.get("kd")
+    qc = ctrl_payload.get("qc")
+
+    # Normalize control_type to internal identifiers used by dynamics
+    if control_type is not None:
+        # Accept values: none|inertial|zero_torque|tracking
+        ct = str(control_type).lower()
+        if ct in ("none", "zero_torque"):
+            mapped = "zero_torque"
+        elif ct in ("inertial", "tracking"):
+            mapped = "tracking"
+        else:
+            mapped = "zero_torque"
+        cfg["control"] = cfg.get("control", {})
+        cfg["control"]["control_type"] = mapped
+    if kp is not None:
+        cfg.setdefault("control", {})["kp"] = float(kp)
+    if kd is not None:
+        cfg.setdefault("control", {})["kd"] = float(kd)
+    if qc is not None:
+        cfg.setdefault("control", {})["qc"] = qc
     return cfg
 
 
@@ -116,7 +150,23 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
         atol = float(sim.get("atol", 1.0e-12))
         playback_speed = float(sim.get("playback_speed", 1.0))
         sample_rate = float(sim.get("sample_rate", 30.0))
-        t, y = plant.compute_states(t_max=t_max, rtol=rtol, atol=atol)
+        
+        # Control
+        ctrl = sim_config.get("control", {})
+        control_type = ctrl.get("control_type")
+        kp = float(ctrl.get("kp", 0.0))
+        kd = float(ctrl.get("kd", 0.0))
+        qc_list = ctrl.get("qc")
+
+        # Prepare arguments for compute_states
+        args = {"t_max": t_max, "rtol": rtol, "atol": atol}
+        if control_type and qc_list:
+            args["control_type"] = control_type
+            args["kp"] = kp
+            args["kd"] = kd
+            args["qc"] = Quaternion(qc_list)
+
+        t, y = plant.compute_states(**args)
         t_s, r_s, v_s, eul_s, w_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
         yaw_arr = eul_s[0, :].tolist()
         pitch_arr = eul_s[1, :].tolist()
@@ -183,7 +233,22 @@ async def websocket_endpoint(websocket: WebSocket):
         sample_rate = float(sim.get("sample_rate", 30.0))
 
         try:
-            t, y = plant.compute_states(t_max=t_max, rtol=rtol, atol=atol)
+            # Control
+            ctrl = sim_config.get("control", {})
+            control_type = ctrl.get("control_type")
+            kp = float(ctrl.get("kp", 0.0))
+            kd = float(ctrl.get("kd", 0.0))
+            qc_list = ctrl.get("qc")
+            
+            # Prepare arguments for compute_states
+            args = {"t_max": t_max, "rtol": rtol, "atol": atol}
+            if control_type and qc_list:
+                args["control_type"] = control_type
+                args["kp"] = kp
+                args["kd"] = kd
+                args["qc"] = Quaternion(qc_list)
+
+            t, y = plant.compute_states(**args)
             t_s, r_s, v_s, eul_s, w_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
             # eul_s is (3, N) in ZYX order -> yaw, pitch, roll. Reorder to roll, pitch, yaw
             yaw_arr = eul_s[0, :].tolist()

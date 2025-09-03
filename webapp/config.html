@@ -96,7 +96,54 @@
                 </section>
 
                 <section class="tab-panel" data-tab="control" role="tabpanel">
-                    <div class="hint">Control parameters will appear here.</div>
+                    <div class="section">
+                        <h3>Control type</h3>
+                        <div class="field-group">
+                            <div class="li-grid">
+                                <label for="CTRL_TYPE">Type</label>
+                                <select id="CTRL_TYPE" class="text-input">
+                                    <option value="none">None (torque-free)</option>
+                                    <option value="inertial">Inertial pointing</option>
+                                </select>
+                                <div class="units"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="group-spacer"></div>
+
+                    <div id="CTRL_PARAMS" class="section" style="display:none">
+                        <h3>Inertial pointing parameters</h3>
+                        <div class="field-group">
+                            <div class="li-grid">
+                                <label for="KP">kp</label>
+                                <input id="KP" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units"></div>
+                                <label for="KD">kd</label>
+                                <input id="KD" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units"></div>
+                            </div>
+                        </div>
+
+                        <div class="group-spacer"></div>
+
+                        <div class="field-group">
+                            <div class="li-grid">
+                                <label for="CQ0">q0</label>
+                                <input id="CQ0" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units"></div>
+                                <label for="CQ1">q1</label>
+                                <input id="CQ1" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units"></div>
+                                <label for="CQ2">q2</label>
+                                <input id="CQ2" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units"></div>
+                                <label for="CQ3">q3</label>
+                                <input id="CQ3" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units"></div>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 <section class="tab-panel" data-tab="actuators" role="tabpanel">

@@ -50,6 +50,19 @@
             const sr = readFloat('sr'); if (sr !== null) payload.sample_rate = sr;
             const rtol = readFloat('rtol'); if (rtol !== null) payload.rtol = rtol;
             const atol = readFloat('atol'); if (atol !== null) payload.atol = atol;
+            // Control
+            const ctrl = params.get('ctrl');
+            const kp = readFloat('kp');
+            const kd = readFloat('kd');
+            const cq0 = readFloat('cq0');
+            const cq1 = readFloat('cq1');
+            const cq2 = readFloat('cq2');
+            const cq3 = readFloat('cq3');
+            const qc = [cq0, cq1, cq2, cq3];
+            if (ctrl) payload.control_type = ctrl;
+            if (typeof kp === 'number' && !isNaN(kp)) payload.kp = kp;
+            if (typeof kd === 'number' && !isNaN(kd)) payload.kd = kd;
+            if (qc.every(v => typeof v === 'number' && !isNaN(v))) payload.qc = qc;
 
             animateTo(25);
             // Request precomputation

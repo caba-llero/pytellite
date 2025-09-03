@@ -153,6 +153,13 @@ socket.onopen = () => {
     const sr = urlParams.get('sr');
     const rtol = urlParams.get('rtol');
     const atol = urlParams.get('atol');
+    const ctrl = urlParams.get('ctrl');
+    const kp = urlParams.get('kp');
+    const kd = urlParams.get('kd');
+    const cq0 = urlParams.get('cq0');
+    const cq1 = urlParams.get('cq1');
+    const cq2 = urlParams.get('cq2');
+    const cq3 = urlParams.get('cq3');
 
     const payload = {};
     if (inertia.every(v => typeof v === 'number' && !isNaN(v))) payload.inertia = inertia;
@@ -164,6 +171,12 @@ socket.onopen = () => {
     if (sr !== null) payload.sample_rate = parseFloat(sr);
     if (rtol !== null) payload.rtol = parseFloat(rtol);
     if (atol !== null) payload.atol = parseFloat(atol);
+    // control
+    if (ctrl) payload.control_type = ctrl;
+    if (kp !== null) payload.kp = parseFloat(kp);
+    if (kd !== null) payload.kd = parseFloat(kd);
+    const qc = [cq0, cq1, cq2, cq3].map(v => v !== null ? parseFloat(v) : null);
+    if (qc.every(v => typeof v === 'number' && !isNaN(v))) payload.qc = qc;
 
     if (Object.keys(payload).length > 0) {
         socket.send(JSON.stringify({ command: 'configure', payload }));
