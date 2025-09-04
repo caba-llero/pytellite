@@ -7,8 +7,12 @@ from fastapi import Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from plant.sim import Plant
+from plant.orbit import get_sid_time, earth_spin_rate_radps
+from datetime import datetime, timezone
+import math
 from plant.quaternion_math import Quaternion
 import yaml
+import glob
 
 # Ensure logs directory exists
 os.makedirs("logs", exist_ok=True)
@@ -40,13 +44,33 @@ async def serve_index_head():
 async def serve_logo():
     return FileResponse(os.path.join(os.path.dirname(__file__), "logo.png"))
 
+# Favicons and manifest at root
+@app.get("/apple-touch-icon.png")
+async def serve_apple_touch():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "apple-touch-icon.png"))
+
+@app.get("/favicon-32x32.png")
+async def serve_favicon_32():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "favicon-32x32.png"))
+
+@app.get("/favicon-16x16.png")
+async def serve_favicon_16():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "favicon-16x16.png"))
+
+@app.get("/site.webmanifest")
+async def serve_manifest():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "site.webmanifest"))
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
 
 
 def _load_defaults() -> dict:
-    config_path = os.path.join(os.path.dirname(__file__), "plant", "config_default.yaml")
+    # Prefer root-level configs; fallback to legacy plant/config_default.yaml
+    root_cfg = os.path.join(os.path.dirname(__file__), "configs", "config_default.yaml")
+    legacy_cfg = os.path.join(os.path.dirname(__file__), "plant", "config_default.yaml")
+    config_path = root_cfg if os.path.exists(root_cfg) else legacy_cfg
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -62,6 +86,7 @@ async def api_defaults():
         "initial_conditions": {
             "q_bi": cfg["initial_conditions"]["q_bi"],
             "omega_bi_radps": cfg["initial_conditions"]["omega_bi_radps"],
+            "orbit": cfg["initial_conditions"].get("orbit", {}),
         },
         "simulation": {
             "dt_sim": cfg["simulation"]["dt_sim"],
@@ -78,6 +103,37 @@ async def api_defaults():
             "qc": cfg.get("control", {}).get("qc", [0.0, 0.0, 0.0, 1.0]),
         },
     }
+
+@app.get("/api/presets")
+async def api_presets():
+    cfg_dir = os.path.join(os.path.dirname(__file__), "configs")
+    presets = []
+    for path in sorted(glob.glob(os.path.join(cfg_dir, "*.yaml"))):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            name = data.get("name") or os.path.basename(path)
+            presets.append({
+                "name": name,
+                "file": os.path.basename(path)
+            })
+        except Exception:
+            continue
+    return {"presets": presets}
+
+@app.get("/api/presets/{filename}")
+async def api_preset_file(filename: str):
+    # sanitize filename
+    base = os.path.basename(filename)
+    if not base.endswith('.yaml'):
+        return {"error": "invalid preset filename"}
+    cfg_dir = os.path.join(os.path.dirname(__file__), "configs")
+    path = os.path.join(cfg_dir, base)
+    if not os.path.exists(path):
+        return {"error": "preset not found"}
+    with open(path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return data
 
 
 def merge_with_defaults(payload: dict) -> dict:
@@ -192,6 +248,20 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
         qy_arr = q_s[1, :].tolist()
         qz_arr = q_s[2, :].tolist()
         qw_arr = q_s[3, :].tolist()
+        # Earth rotation parameters for orbit visualization
+        try:
+            input_time_str = None
+            if isinstance(config, dict):
+                input_time_str = config.get("epoch_utc")
+            if not input_time_str:
+                input_time_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            theta0_deg = float(get_sid_time(input_time_str))
+            theta0_rad = math.radians(theta0_deg)
+            spin_rate = float(earth_spin_rate_radps(input_time_str))
+        except Exception:
+            theta0_rad = 0.0
+            spin_rate = 7.2921151e-5
+
         dataset = {
             "t": t_s.tolist(),
             "qx": qx_arr,
@@ -202,6 +272,9 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             "q": w_s[1, :].tolist(),
             "r": w_s[2, :].tolist(),
             "sample_rate": sample_rate,
+            # Earth rotation parameters
+            "earth_initial_sidereal_angle_rad": theta0_rad,
+            "earth_spin_rate_radps": spin_rate,
         }
         # Metrics
         num_steps = int(t.shape[0])
@@ -249,6 +322,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     print("Received simulation configuration.")
                     payload = command.get("payload", {})
                     sim_config = merge_with_defaults(payload)
+                    # Stash epoch_utc (string) for visualization parameters
+                    try:
+                        sim_config["_epoch_utc"] = payload.get("epoch_utc") if isinstance(payload, dict) else None
+                    except Exception:
+                        sim_config["_epoch_utc"] = None
                     sim_config["_received"] = True
                     config_event.set()
             except json.JSONDecodeError:
@@ -291,6 +369,18 @@ async def websocket_endpoint(websocket: WebSocket):
             qy_arr = q_s[1, :].tolist()
             qz_arr = q_s[2, :].tolist()
             qw_arr = q_s[3, :].tolist()
+            # Earth rotation parameters for orbit visualization (use provided epoch_utc if available)
+            try:
+                input_time_str = sim_config.get("_epoch_utc")
+                if not input_time_str:
+                    input_time_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                theta0_deg = float(get_sid_time(input_time_str))
+                theta0_rad = math.radians(theta0_deg)
+                spin_rate = float(earth_spin_rate_radps(input_time_str))
+            except Exception:
+                theta0_rad = 0.0
+                spin_rate = 7.2921151e-5
+
             dataset = {
                 "t": t_s.tolist(),
                 "qx": qx_arr,
@@ -301,6 +391,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 "q": w_s[1, :].tolist(),
                 "r": w_s[2, :].tolist(),
                 "sample_rate": sample_rate,
+                # Earth rotation parameters
+                "earth_initial_sidereal_angle_rad": theta0_rad,
+                "earth_spin_rate_radps": spin_rate,
             }
             # Metrics
             num_steps = int(t.shape[0])

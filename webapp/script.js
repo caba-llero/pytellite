@@ -2,6 +2,7 @@
 const metricsDiv = document.getElementById('metrics');
 const simInfoDiv = document.getElementById('sim-info');
 const configBtn = document.getElementById('config-btn');
+const legendDiv = document.getElementById('legend');
 // Simple tabs behavior for left panel
 document.querySelectorAll('#left-panel .tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -36,6 +37,8 @@ const attitudeScene = new THREE.Scene();
 const orbitScene = new THREE.Scene();
 let currentView = 'attitude'; // 'attitude' | 'orbit'
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+// Use Z-up visualization (does not affect simulation frames)
+camera.up.set(0, 0, 1);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio || 1);
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -95,16 +98,26 @@ const earthTexture = earthTextureLoader.load('/textures/earth_daymap.jpg');
 earthTexture.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding; // compatibility across versions
 const earthMaterial = new THREE.MeshPhongMaterial({ map: earthTexture });
 const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+// Align Earth's rotation axis with +Z (north up)
+earth.rotation.x = Math.PI / 2;
 // Add a simple light for Phong material
 const orbitAmbient = new THREE.AmbientLight(0x404040, 0.8);
 const orbitDirectional = new THREE.DirectionalLight(0xffffff, 1.0);
 orbitDirectional.position.set(5, 5, 5);
 orbitScene.add(orbitAmbient);
 orbitScene.add(orbitDirectional);
-orbitScene.add(earth);
+// Group for Earth + ECEF axes so we can rotate relative to fixed ECI
+const ecefGroup = new THREE.Group();
+ecefGroup.add(earth);
+orbitScene.add(ecefGroup);
+// ECI axes (fixed)
 createAxis(orbitScene, [1, 0, 0], 0xff0000, 5, false);
 createAxis(orbitScene, [0, 1, 0], 0x00ff00, 5, false);
 createAxis(orbitScene, [0, 0, 1], 0x0000ff, 5, false);
+// ECEF axes (rotate with Earth)
+createAxis(ecefGroup, [1, 0, 0], 0xaa4444, 4, true);
+createAxis(ecefGroup, [0, 1, 0], 0x44aa44, 4, true);
+createAxis(ecefGroup, [0, 0, 1], 0x4444aa, 4, true);
 
 // Keep the 3D view visually centered on the center panel while allowing spill under the left panel
 function repositionRenderer() {
@@ -123,6 +136,35 @@ function repositionRenderer() {
     }
 }
 repositionRenderer();
+
+// Legend switching
+function renderLegend(view) {
+    if (!legendDiv) return;
+    if (view === 'orbit') {
+        legendDiv.innerHTML = `
+            <div class="legend-section"><span class="legend-line dashed"></span><span class="legend-text">Spacecraft body axes</span></div>
+            <div class="legend-section"><span class="legend-line solid"></span><span class="legend-text">Earth Centered Inertial</span></div>
+            <div class="legend-section"><span class="legend-line dashdot"></span><span class="legend-text">Earth Centered Earth Fixed</span></div>
+            <div class="legend-section legend-colors">
+                <span class="legend-color x"></span><span class="legend-axis-label">X</span>
+                <span class="legend-color y"></span><span class="legend-axis-label">Y</span>
+                <span class="legend-color z"></span><span class="legend-axis-label">Z</span>
+            </div>
+            <div class="legend-note">Vernal equinox: X on the ECI frame</div>
+        `;
+    } else {
+        legendDiv.innerHTML = `
+            <div class="legend-section"><span class="legend-line solid"></span><span class="legend-text">Inertial axes</span></div>
+            <div class="legend-section"><span class="legend-line dashed"></span><span class="legend-text">Body axes</span></div>
+            <div class="legend-section legend-colors">
+                <span class="legend-color x"></span><span class="legend-axis-label">X</span>
+                <span class="legend-color y"></span><span class="legend-axis-label">Y</span>
+                <span class="legend-color z"></span><span class="legend-axis-label">Z</span>
+            </div>
+        `;
+    }
+}
+renderLegend('attitude');
 
 // Plotly charts
 const timeUnitSelect = document.getElementById('timeUnitSelect');
@@ -218,6 +260,8 @@ let metrics = null;
 let frameIndex = 0;
 let playbackTimer = null;
 let precomputedDataLoaded = false;
+let earthInitialSiderealAngleRad = 0.0;
+let earthSpinRateRadps = 0.0;
 
 function updateTimeLabel(i) {
     if (!dataset) return;
@@ -313,6 +357,9 @@ function renderSimInfo(m) {
 function startPlaybackFromDataset(data, m=null) {
     dataset = data;
     metrics = m;
+    // Read Earth rotation parameters from dataset
+    earthInitialSiderealAngleRad = Number(data.earth_initial_sidereal_angle_rad || 0.0) || 0.0;
+    earthSpinRateRadps = Number(data.earth_spin_rate_radps || 0.0) || 0.0;
     if (metrics) {
         renderMetrics(metrics);
         renderSimInfo(metrics);
@@ -387,6 +434,7 @@ socket.onopen = () => {
     const cq1 = urlParams.get('cq1');
     const cq2 = urlParams.get('cq2');
     const cq3 = urlParams.get('cq3');
+    const epoch = urlParams.get('epoch');
 
     const payload = {};
     if (inertia.every(v => typeof v === 'number' && !isNaN(v))) payload.inertia = inertia;
@@ -403,6 +451,7 @@ socket.onopen = () => {
     if (kd !== null) payload.kd = parseFloat(kd);
     const qc = [cq0, cq1, cq2, cq3].map(v => v !== null ? parseFloat(v) : null);
     if (qc.every(v => typeof v === 'number' && !isNaN(v))) payload.qc = qc;
+    if (epoch) payload.epoch_utc = epoch;
 
     if (Object.keys(payload).length > 0) {
         socket.send(JSON.stringify({ command: 'configure', payload }));
@@ -440,6 +489,14 @@ function animate() {
     requestAnimationFrame(animate);
     cuboid.quaternion.set(latestQuat.x, latestQuat.y, latestQuat.z, latestQuat.w);
     controls.update();
+    // Update ECEF rotation: theta(t) = theta0 + omega * t
+    try {
+        if (dataset) {
+            const tNow = (frameIndex >= 0 && frameIndex < dataset.t.length) ? dataset.t[frameIndex] : 0;
+            const theta = earthInitialSiderealAngleRad + earthSpinRateRadps * tNow;
+            ecefGroup.rotation.set(0, 0, theta);
+        }
+    } catch (_) {}
     const activeScene = currentView === 'orbit' ? orbitScene : attitudeScene;
     renderer.render(activeScene, camera);
 }
@@ -484,6 +541,7 @@ if (configBtn) {
                 camera.position.set(4, 4, 4);
                 controls.target.set(0, 0, 0);
                 controls.update();
+                renderLegend(currentView);
             }
         });
     });

@@ -80,6 +80,17 @@ initial_conditions:
   q_bi: [0.6853, 0.6953, 0.1531, 0.1531]
   omega_bi_radps: [0.1, 0.2, 0.3]
 
+  # Orbit elements for UI defaults
+  orbit:
+    epoch_utc_fractional_yydoy: 25258.5000  # YYDDD.DDDD (2025-09-15 12:00 UTC)
+    keplerian:
+      semi_major_axis_km: 7078.0
+      eccentricity: 0.0010
+      inclination_deg: 97.4
+      raan_deg: 0.0
+      argument_of_the_perigee_deg: 90.0
+      true_anomaly_deg: 0.0
+
 
 
 

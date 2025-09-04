@@ -2,6 +2,10 @@
 <html>
 <head>
     <title>Loading Simulation</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -63,6 +67,9 @@
             if (typeof kp === 'number' && !isNaN(kp)) payload.kp = kp;
             if (typeof kd === 'number' && !isNaN(kd)) payload.kd = kd;
             if (qc.every(v => typeof v === 'number' && !isNaN(v))) payload.qc = qc;
+            // Epoch for Earth rotation parameters (if provided via config page)
+            const epoch = params.get('epoch');
+            if (epoch) payload.epoch_utc = epoch;
 
             animateTo(25);
             // Request precomputation

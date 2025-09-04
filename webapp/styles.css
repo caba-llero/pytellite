@@ -79,6 +79,17 @@ body {
 }
 .legend-line.dashed { border-top-style: dashed; }
 .legend-line.solid { border-top-style: solid; }
+.legend-line.dashdot {
+    border-top: none;
+    height: 2px;
+    background: repeating-linear-gradient(
+        to right,
+        currentColor 0 6px,
+        transparent 6px 10px,
+        currentColor 10px 12px,
+        transparent 12px 16px
+    );
+}
 .legend-colors { gap: 10px; }
 .legend-color {
     display: inline-block;
@@ -91,6 +102,7 @@ body {
 .legend-color.y { background-color: #00ff00; }
 .legend-color.z { background-color: #0000ff; }
 .legend-axis-label { margin-right: 8px; color: #ddd; }
+.legend-note { color: #aeb6c2; font-size: 11px; margin-top: 6px; }
 
 /* Modern player controls at bottom center */
 .player-controls {

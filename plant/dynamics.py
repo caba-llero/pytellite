@@ -77,6 +77,8 @@ def control_law_tracking(w: np.ndarray, q: Quaternion, qc: Quaternion, kp: float
 
 
 
+
+
 #### Old
 
 def two_body_acceleration(r_eci: np.ndarray, mu: float = MU_EARTH) -> np.ndarray:

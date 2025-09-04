@@ -2,6 +2,10 @@
 <html>
 <head>
     <title>Simulation Configuration</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -57,9 +61,11 @@
                 <button class="tab active" data-tab="shape" role="tab" aria-selected="true">Shape & Inertia</button>
                 <button class="tab" data-tab="control" role="tab" aria-selected="false">Control</button>
                 <button class="tab" data-tab="actuators" role="tab" aria-selected="false">Actuators</button>
-                <button class="tab" data-tab="initial" role="tab" aria-selected="false">Initial Conditions</button>
+                <button class="tab" data-tab="initial" role="tab" aria-selected="false">Initial attitude</button>
+                <button class="tab" data-tab="orbit" role="tab" aria-selected="false">Initial orbit</button>
                 <button class="tab" data-tab="gui" role="tab" aria-selected="false">GUI</button>
                 <button class="tab" data-tab="integration" role="tab" aria-selected="false">Integration</button>
+                <button class="tab" data-tab="presets" role="tab" aria-selected="false">Presets</button>
             </div>
 
             <div class="panels">
@@ -156,7 +162,8 @@
 
                 <section class="tab-panel" data-tab="initial" role="tabpanel">
                     <div class="section">
-                        <h3>Initial Angular Velocity (inertial frame)</h3>
+                        <h3>Angular velocity</h3>
+                        <div class="hint">Body frame with respect to inertial frame, in body frame coordinates</div>
                         <div class="field-group">
                             <div class="li-grid">
                                 <label for="WX">ωx</label>
@@ -175,7 +182,8 @@
                     <div class="group-spacer"></div>
 
                     <div class="section">
-                        <h3>Initial Quaternion q_bi = [x, y, z, w]</h3>
+                        <h3>Attitude quaternion</h3>
+                        <div class="hint">Body frame with respect to inertial frame. Scalar component last</div>
                         <div class="field-group">
                             <div class="li-grid">
                                 <label for="QX">qx</label>
@@ -190,6 +198,46 @@
                                 <label for="QW">qw</label>
                                 <input id="QW" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">unitless</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="tab-panel" data-tab="orbit" role="tabpanel">
+                    <div class="section">
+                        <div class="field-group">
+                            <div class="li-grid">
+                                <label for="DATEUTC">Date (UTC)</label>
+                                <input id="DATEUTC" class="text-input" type="text" inputmode="text" autocomplete="off">
+                                <div class="units">YYYY-MM-DD HH:MM:SS</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="group-spacer"></div>
+
+                    <div class="section">
+                        <h3>Keplerian orbital elements</h3>
+                        <div class="field-group">
+                            <div class="li-grid">
+                                <label for="SMA">semi major axis</label>
+                                <input id="SMA" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units">deg</div>
+                                <label for="ECC">eccentricity</label>
+                                <input id="ECC" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units">deg</div>
+                                <label for="INC">inclination</label>
+                                <input id="INC" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units">deg</div>
+                                <label for="RAAN">RAAN</label>
+                                <input id="RAAN" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units">deg</div>
+                                <label for="AOP">argument of the perigee</label>
+                                <input id="AOP" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units">deg</div>
+                                <label for="TA">true anomaly</label>
+                                <input id="TA" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units">deg</div>
                             </div>
                         </div>
                     </div>
@@ -225,6 +273,19 @@
                                 <label for="ATOL">atol</label>
                                 <input id="ATOL" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">unitless</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="tab-panel" data-tab="presets" role="tabpanel">
+                    <div class="section">
+                        <h3>Configuration Presets</h3>
+                        <div class="field-group">
+                            <div class="li-grid">
+                                <label for="PRESET_SELECT">Preset</label>
+                                <select id="PRESET_SELECT" class="text-input"></select>
+                                <button id="PRESET_LOAD_BTN" class="start-btn" type="button" style="margin-left: 8px;">Load</button>
                             </div>
                         </div>
                     </div>
