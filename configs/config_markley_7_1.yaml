@@ -1,0 +1,85 @@
+name: Markley - Example 7.1
+simulation:
+  dt_sim: 0.1
+  time_scale: 100.0
+  mode: SIL
+  rng_seed: 12345
+  t_final: 5.0
+  # Precomputation defaults for GUI playback
+  t_max: 300.0
+  playback_speed: 1.0
+  sample_rate: 30.0
+  rtol: 1.0e-12
+  atol: 1.0e-12
+
+spacecraft:
+  mass: 10.0
+  inertia: [10000,9000,12000]
+  shape: [1, 0.9, 1.2]
+
+sensors:
+  gps:
+    rate_hz: 1.0
+    sigma_pos_m: 5.0
+    sigma_vel_mps: 0.5
+  gyro:
+    rate_hz: 100.0
+    sigma_radps: 0.001
+    bias_rw_sigma: 0.00001
+
+actuators:
+  reaction_wheels:
+    max_torque: 0.01
+    max_speed_rpm: 6000
+    inertia: 0.001
+
+perturbations:
+  two_body: true
+  j2: false
+  jn: false
+  sun_moon: false
+  srp: false
+  drag: false
+
+comms:
+  protocol: udp
+  udp:
+    plant_to_flight_port: 10001
+    flight_to_plant_port: 10002
+
+watchdog:
+  timeout_sec: 1.0
+
+logging:
+  replay_file: logs/replay.ndjson
+
+# Default control parameters
+control:
+  control_type: tracking # none | tracking (inertial pointing)
+  kp: 50
+  kd: 500
+  qc: [0.0, 0.0, 0.0, 1.0]
+
+initial_conditions:
+  # ~500 km circular orbit around Earth, ECI position on x-axis.
+  r_eci_m: [6871000.0, 0.0, 0.0]
+  v_eci_mps: [0.0, 7610.0, 0.0]
+
+  # Initial attitude can be specified wrt the orbit frame or the inertial frame.
+  # Use the 'frame' parameter to choose.
+  frame: 'inertial' # 'orbit' or 'inertial'
+
+  # Orbit frame initial conditions
+  # q_ob: quaternion from orbit frame to body frame.
+  # A 45 deg rotation over the x-axis.
+  q_ob: [0.38268, 0.0, 0.0, 0.92388]
+  # omega_bo_radps: angular velocity of body wrt orbit frame, in body frame [rad/s]
+  omega_bo_radps: [0.2, -0.1, 0.3]
+
+  # Inertial frame initial conditions
+  q_bi: [0.6853, 0.6953, 0.1531, 0.1531]
+  omega_bi_radps: [0.00925, 0.00925, 0.000925]
+
+
+
+
