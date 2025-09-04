@@ -16,6 +16,9 @@ os.makedirs("logs", exist_ok=True)
 app = FastAPI()
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "webapp")
 app.mount("/static", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+TEXTURES_DIR = os.path.join(os.path.dirname(__file__), "textures")
+if os.path.isdir(TEXTURES_DIR):
+    app.mount("/textures", StaticFiles(directory=TEXTURES_DIR, html=False), name="textures")
 
 @app.get("/")
 async def serve_config():

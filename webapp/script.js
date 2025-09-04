@@ -32,7 +32,9 @@ function fmtTime(seconds) {
 }
 
 // --- 3D Scene Setup ---
-const scene = new THREE.Scene();
+const attitudeScene = new THREE.Scene();
+const orbitScene = new THREE.Scene();
+let currentView = 'attitude'; // 'attitude' | 'orbit'
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio || 1);
@@ -48,7 +50,7 @@ const sizeX = parseFloat(urlParams.get('sx') || '2');
 const sizeY = parseFloat(urlParams.get('sy') || '1');
 const sizeZ = parseFloat(urlParams.get('sz') || '0.5');
 const cuboid = new THREE.Mesh(new THREE.BoxGeometry(sizeX, sizeY, sizeZ), new THREE.MeshNormalMaterial());
-scene.add(cuboid);
+attitudeScene.add(cuboid);
 
 // Axes helpers
 function createAxis(parent, direction, color, length, dashed = false) {
@@ -78,12 +80,31 @@ function createAxis(parent, direction, color, length, dashed = false) {
     cone.position.copy(end.clone().sub(dir.clone().multiplyScalar(headLength)));
     parent.add(cone);
 }
-createAxis(scene, [1, 0, 0], 0xff0000, 5, false);
-createAxis(scene, [0, 1, 0], 0x00ff00, 5, false);
-createAxis(scene, [0, 0, 1], 0x0000ff, 5, false);
+createAxis(attitudeScene, [1, 0, 0], 0xff0000, 5, false);
+createAxis(attitudeScene, [0, 1, 0], 0x00ff00, 5, false);
+createAxis(attitudeScene, [0, 0, 1], 0x0000ff, 5, false);
 createAxis(cuboid, [1, 0, 0], 0xff0000, 3, true);
 createAxis(cuboid, [0, 1, 0], 0x00ff00, 3, true);
 createAxis(cuboid, [0, 0, 1], 0x0000ff, 3, true);
+
+// Orbit scene: Earth sphere at origin and ECI axes
+const earthRadius = 1.0;
+const earthGeometry = new THREE.SphereGeometry(earthRadius, 32, 32);
+const earthTextureLoader = new THREE.TextureLoader();
+const earthTexture = earthTextureLoader.load('/textures/earth_daymap.jpg');
+earthTexture.colorSpace = THREE.SRGBColorSpace || THREE.sRGBEncoding; // compatibility across versions
+const earthMaterial = new THREE.MeshPhongMaterial({ map: earthTexture });
+const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+// Add a simple light for Phong material
+const orbitAmbient = new THREE.AmbientLight(0x404040, 0.8);
+const orbitDirectional = new THREE.DirectionalLight(0xffffff, 1.0);
+orbitDirectional.position.set(5, 5, 5);
+orbitScene.add(orbitAmbient);
+orbitScene.add(orbitDirectional);
+orbitScene.add(earth);
+createAxis(orbitScene, [1, 0, 0], 0xff0000, 5, false);
+createAxis(orbitScene, [0, 1, 0], 0x00ff00, 5, false);
+createAxis(orbitScene, [0, 0, 1], 0x0000ff, 5, false);
 
 // Keep the 3D view visually centered on the center panel while allowing spill under the left panel
 function repositionRenderer() {
@@ -419,7 +440,8 @@ function animate() {
     requestAnimationFrame(animate);
     cuboid.quaternion.set(latestQuat.x, latestQuat.y, latestQuat.z, latestQuat.w);
     controls.update();
-    renderer.render(scene, camera);
+    const activeScene = currentView === 'orbit' ? orbitScene : attitudeScene;
+    renderer.render(activeScene, camera);
 }
 animate();
 
@@ -444,3 +466,25 @@ if (configBtn) {
         window.location.href = '/';
     });
 }
+
+// View toggle behavior (Attitude | Orbit)
+(function initViewToggle() {
+    const viewToggle = document.getElementById('view-toggle');
+    if (!viewToggle) return;
+    const buttons = viewToggle.querySelectorAll('.toggle-segment');
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            buttons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
+            btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
+            const view = btn.getAttribute('data-view');
+            if (view === 'orbit' || view === 'attitude') {
+                currentView = view;
+                // Reset camera/controls target to origin for both views
+                camera.position.set(4, 4, 4);
+                controls.target.set(0, 0, 0);
+                controls.update();
+            }
+        });
+    });
+})();

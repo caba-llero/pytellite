@@ -186,6 +186,19 @@ body {
 }
 .config-btn:hover { filter: brightness(1.08); }
 
+/* View toggle below logo */
+.view-toggle { display: inline-flex; border: 1px solid #1f242b; border-radius: 10px; overflow: hidden; margin: 6px 0 10px 0; }
+.view-toggle .toggle-segment {
+    background: #0f1318;
+    color: #aeb6c2;
+    border: none;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.view-toggle .toggle-segment + .toggle-segment { border-left: 1px solid #1f242b; }
+.view-toggle .toggle-segment.active { background: linear-gradient(135deg, #0b2a3a, #123244); color: #e6eefc; }
+
 /* Tabs for left panel */
 .tabs { display: flex; gap: 8px; border-bottom: 1px solid #1f242b; margin: 8px 0 12px 0; overflow-x: auto; }
 .tab { background: transparent; border: none; color: #aeb6c2; padding: 8px 12px; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; border-top-left-radius: 8px; border-top-right-radius: 8px; }
