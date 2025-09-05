@@ -39,7 +39,7 @@ class Plant:
 
 
         # Spacecraft properties
-        self.J = np.diag(cfg["spacecraft"]["inertia"])
+        self.J = np.diag(cfg["spacecraft"]["inertia"]).astype(float)
         self.Ji = np.linalg.inv(self.J)
 
         # Initial attitude state
@@ -63,13 +63,13 @@ class Plant:
             # R_bo = quat_to_rotmatrix(q_bo_init)
             # self.w_bi = w_bo_init + R_bo.T @ w_oi
         elif frame == 'inertial':
-            self.q_bi = np.array(ic["q_bi"])
+            self.q_bi = np.array(ic["q_bi"], dtype=float)
             self.w_bi = np.array(ic["omega_bi_radps"], dtype=float)
         else:
             raise ValueError(f"Invalid initial condition frame: {frame}")
 
     def compute_states(self, t_max: float, rtol: float = 1e-12, atol: float = 1e-12, 
-        control_type: Optional[str] = None, kp: Optional[float] = None, 
+        control_type: Optional[object] = None, kp: Optional[float] = None, 
         kd: Optional[float] = None, qc: Optional[np.ndarray] = None) -> np.ndarray:
         """
         Compute the states of the plant over a given time range.
@@ -77,12 +77,27 @@ class Plant:
         t_span = (0, t_max)
         y0 = np.hstack((self.r0, self.v0, self.w_bi, self.q_bi))
         
-        # Determine args for state_deriv based on provided control parameters
-        if control_type is not None and kp is not None and kd is not None and qc is not None:
-            args = (self.J, self.Ji, control_type, kp, kd, qc)
-        else:
-            # Fallback to zero_torque if control params are missing
-            args = (self.J, self.Ji, "zero_torque", 0.0, 0.0, np.array([0,0,0,1.0]))
+        # Map control_type to integer expected by JITed dynamics
+        def _map_control_type(ct: object) -> int:
+            if isinstance(ct, (int, np.integer)):
+                return int(ct)
+            if isinstance(ct, str):
+                s = ct.lower().strip()
+                if s in ("none", "zero_torque"):
+                    return 0
+                if s in ("inertial", "inertial_linear", "tracking"):
+                    return 1
+                if s in ("inertial_nonlinear", "nonlinear_tracking"):
+                    return 2
+            return 0
+
+        ct_int = _map_control_type(control_type)
+        kp_val = float(kp) if kp is not None else 0.0
+        kd_val = float(kd) if kd is not None else 0.0
+        qc_arr = np.array(qc, dtype=float) if qc is not None else np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+
+        # Prepare args for state_deriv
+        args = (self.J, self.Ji, ct_int, kp_val, kd_val, qc_arr)
             
         sol = solve_ivp(state_deriv, t_span, y0, args=args, rtol=rtol, atol=atol)
         return sol.t, sol.y

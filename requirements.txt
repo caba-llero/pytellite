@@ -11,6 +11,7 @@ astropy>=7.0
 fastapi>=0.110
 uvicorn[standard]>=0.24
 aiofiles>=23.2
+numba>=0.59
 
 fastapi>=0.111
 uvicorn[standard]>=0.30

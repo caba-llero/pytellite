@@ -1,8 +1,10 @@
+from numba import njit
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
 
 
+@njit
 def quat_psi(q: np.ndarray) -> np.ndarray:
     """The Psi(q) function for quaternions.
 
@@ -20,6 +22,7 @@ def quat_psi(q: np.ndarray) -> np.ndarray:
     ])
 
 
+@njit
 def quat_xi(q: np.ndarray) -> np.ndarray:
     """The Xi(q) function for quaternions.
 
@@ -37,6 +40,7 @@ def quat_xi(q: np.ndarray) -> np.ndarray:
     ])
 
 
+@njit
 def quat_multiply_cross_operator(q: np.ndarray) -> np.ndarray:
     """Quaternion ⊗ product matrix operator.
 
@@ -49,6 +53,7 @@ def quat_multiply_cross_operator(q: np.ndarray) -> np.ndarray:
     return np.hstack((quat_psi(q), q.reshape(4, 1)))
 
 
+@njit
 def quat_multiply_dot_operator(q: np.ndarray) -> np.ndarray:
     """Quaternion ⨀ product matrix operator.
 
@@ -61,6 +66,7 @@ def quat_multiply_dot_operator(q: np.ndarray) -> np.ndarray:
     return np.hstack((quat_xi(q), q.reshape(4, 1)))
 
 
+@njit
 def quat_normalize(q: np.ndarray) -> np.ndarray:
     """
     Get a normalized version of this quaternion.
@@ -77,47 +83,55 @@ def quat_normalize(q: np.ndarray) -> np.ndarray:
         normalized_q = np.array([0.0, 0.0, 0.0, 1.0])
     else:
         normalized_q = q.flatten() / n
-    return normalized_q.reshape(4, 1)
+    return normalized_q
 
 
+@njit
 def quat_norm(q: np.ndarray) -> float:
     """Get the norm (magnitude) of the quaternion."""
     return np.linalg.norm(q)
 
 
+@njit
 def quat_is_normalized(q: np.ndarray) -> bool:
     """Check if the quaternion is normalized."""
     return np.isclose(quat_norm(q), 1.0)
 
 
+@njit
 def quat_conj(q: np.ndarray) -> np.ndarray:
     """Get the conjugate of a quaternion."""
     q_flat = q.flatten()
-    return np.array([-q_flat[0], -q_flat[1], -q_flat[2], q_flat[3]]).reshape(4, 1)
+    return np.array([-q_flat[0], -q_flat[1], -q_flat[2], q_flat[3]])
 
 
+@njit
 def quat_multiply_cross(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     """Quaternion multiplication, defined as ⊗ operator from Markley.
     If the second argument is a vector, it is treated as a quaternion with a zero scalar component."""
+    mat = quat_multiply_cross_operator(q1)
+    # Always return a flat (4,) array for consistency with Numba
     if q2.shape == (3,) or q2.shape == (3, 1):
-        # Make it a 4x1 array with 4th element zero
-        v4 = np.zeros((4, 1))
-        v4[:3, 0] = q2.flatten()
-        return quat_multiply_cross_operator(q1) @ v4
-    return quat_multiply_cross_operator(q1) @ q2
+        v4 = np.zeros(4)
+        v4[:3] = q2.flatten()
+        return (mat @ v4).reshape(4,)
+    return (mat @ q2.reshape(4,)).reshape(4,)
 
 
+@njit
 def quat_multiply_dot(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     """Quaternion multiplication, defined as ⊙ operator from Markley.
     If the second argument is a vector, it is treated as a quaternion with a zero scalar component."""
+    mat = quat_multiply_dot_operator(q1)
+    # Always return a flat (4,) array for consistency with Numba
     if q2.shape == (3,) or q2.shape == (3, 1):
-        # Make it a 4x1 array with 4th element zero
-        v4 = np.zeros((4, 1))
-        v4[:3, 0] = q2.flatten()
-        return quat_multiply_dot_operator(q1) @ v4
-    return quat_multiply_dot_operator(q1) @ q2
+        v4 = np.zeros(4)
+        v4[:3] = q2.flatten()
+        return (mat @ v4).reshape(4,)
+    return (mat @ q2.reshape(4,)).reshape(4,)
 
 
+@njit
 def quat_inv(q: np.ndarray) -> np.ndarray:
     """Inverse of a quaternion is the conjugate divided by the norm squared."""
     return quat_conj(q) / (quat_norm(q)**2)
@@ -199,7 +213,7 @@ def rotmatrix_to_quaternion(A: np.ndarray) -> np.ndarray:
         q2 = (A[1, 2] + A[2, 1]) / (4 * q3)
         q4 = (A[0, 1] - A[1, 0]) / (4 * q3)
 
-    return np.array([q1, q2, q3, q4]).reshape(4, 1)
+    return np.array([q1, q2, q3, q4])
 
 
 def quat_to_rotmatrix(q: np.ndarray) -> np.ndarray:

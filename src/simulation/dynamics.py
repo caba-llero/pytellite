@@ -1,25 +1,28 @@
 from __future__ import annotations
 
+from numba import njit
 import numpy as np
 from ..math import quaternion as qm
 from numpy.linalg import inv, solve
 from scipy.integrate import RK45
 
 
-MU_EARTH = 3.986004418e14  # [m^3/s^2]
+MU_EARTH = 3.986004418e14  # [m^s^2]
 
 mu = MU_EARTH
 
+@njit
 def skew(v: np.ndarray) -> np.ndarray:
     """Return the 3x3 skew-symmetric matrix (v_x) of a 3-element vector v."""
     return np.array([
-        [0, -v[2], v[1]],
-        [v[2], 0, -v[0]],
-        [-v[1], v[0], 0]
+        [0.0, -v[2],  v[1]],
+        [v[2],  0.0, -v[0]],
+        [-v[1], v[0],  0.0]
     ])
 
+@njit
 def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
-    control_type: str, kp: float, kd: float, qc: np.ndarray) -> np.ndarray:
+    control_type: int, kp: float, kd: float, qc: np.ndarray) -> np.ndarray:
     """
     Compute the derivative of the state vector.
     Inputs:
@@ -32,6 +35,9 @@ def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
     v = y[3:6]
     w = y[6:9]
     q = y[9:13]
+    # Ensure matrix dtypes are float64 for stable Numba matmul
+    Jf = J.astype(np.float64)
+    Jif = Ji.astype(np.float64)
     q = qm.quat_normalize(q)
 
     L = control_laws(w, q, qc, control_type, kp, kd)
@@ -39,33 +45,34 @@ def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
     drdt = v
     dvdt = -mu * r / np.linalg.norm(r) ** 3
     dqdt = 0.5 * qm.quat_multiply_dot(q, w)
-    dwdt = Ji @ (L - skew(w) @ J @ w)
+    dwdt = Jif @ (L - (skew(w) @ Jf) @ w)
 
-    dydt = np.hstack((drdt, dvdt, dwdt, dqdt.reshape(4,)))
+    dydt = np.hstack((drdt, dvdt, dwdt, dqdt))
     return dydt
 
-def control_laws(w: np.ndarray, q: np.ndarray, qc: np.ndarray, control_type: str, kp: float, kd: float):
-    if control_type == "zero_torque":
+@njit
+def control_laws(w: np.ndarray, q: np.ndarray, qc: np.ndarray, control_type: int, kp: float, kd: float):
+    if control_type == 0:
         return np.zeros(3)
-    elif control_type == "tracking":
+    elif control_type == 1:
         return control_law_tracking(w, q, qc, kp, kd)
-    elif control_type == "nonlinear_tracking":
+    elif control_type == 2:
         return control_law_nonlinear_tracking(w, q, qc, kp, kd)
     # Fallback to safe default if control_type is unknown
     return np.zeros(3)
 
+@njit
 def control_law_tracking(w: np.ndarray, q: np.ndarray, qc: np.ndarray, kp: float, kd: float):
     dq = qm.quat_multiply_cross(q, qm.quat_inv(qc))
     dq = qm.quat_normalize(dq)
-
-    L = - kp * np.sign(dq[3]) * dq[0:3].flatten() - kd * w
+    L = - kp * np.sign(dq[3]) * dq[0:3] - kd * w
     return L
 
+@njit
 def control_law_nonlinear_tracking(w: np.ndarray, q: np.ndarray, qc: np.ndarray, kp: float, kd: float):
     dq = qm.quat_multiply_cross(q, qm.quat_inv(qc))
     dq = qm.quat_normalize(dq)
-
-    dq_vec = dq[0:3].flatten()
+    dq_vec = dq[0:3]
     L = - kp * np.sign(dq[3]) * dq_vec - kd * (1 + np.dot(dq_vec, dq_vec)) * w
     return L
 
@@ -79,6 +86,7 @@ def control_law_nonlinear_tracking(w: np.ndarray, q: np.ndarray, qc: np.ndarray,
 
 #### Old
 
+@njit
 def two_body_acceleration(r_eci: np.ndarray, mu: float = MU_EARTH) -> np.ndarray:
     r_norm = np.linalg.norm(r_eci)
     if r_norm == 0:
@@ -117,6 +125,7 @@ def rk4_step_orbit(r_eci: np.ndarray, v_eci: np.ndarray, dt: float, mu: float = 
     return r_next, v_next, a_next
 
 
+@njit
 def omega_to_quat_derivative(q: np.ndarray, w: np.ndarray) -> np.ndarray:
     """Convert angular velocity to quaternion derivative.
     Inputs:
@@ -178,6 +187,7 @@ def integrate_attitude_quat_mult(q_bi: np.ndarray, omega_b: np.ndarray, dt: floa
 
 
 
+@njit
 def eulers_equations(w: np.ndarray, J: np.ndarray, L: np.ndarray) -> np.ndarray:
     """
     Euler's equations for the rigid body dynamics. 

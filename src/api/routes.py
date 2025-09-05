@@ -2,6 +2,8 @@ import asyncio
 import json
 import os
 import time
+import logging
+import traceback
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Response, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -196,13 +198,13 @@ def merge_with_defaults(payload: dict) -> dict:
         # Accept values: none | zero_torque | inertial | tracking | inertial_linear | inertial_nonlinear | nonlinear_tracking
         ct = str(control_type).lower().strip()
         if ct in ("none", "zero_torque"):
-            mapped = "zero_torque"
+            mapped = 0
         elif ct in ("inertial_nonlinear", "nonlinear_tracking"):
-            mapped = "nonlinear_tracking"
+            mapped = 2
         elif ct in ("inertial", "inertial_linear", "tracking"):
-            mapped = "tracking"
+            mapped = 1
         else:
-            mapped = "zero_torque"
+            mapped = 0
         cfg["control"] = cfg.get("control", {})
         cfg["control"]["control_type"] = mapped
     if kp is not None:
@@ -248,11 +250,11 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
 
         # Prepare arguments for compute_states
         args = {"t_max": t_max, "rtol": rtol, "atol": atol}
-        if control_type and qc_list:
+        if control_type is not None and qc_list:
             args["control_type"] = control_type
             args["kp"] = kp
             args["kd"] = kd
-            args["qc"] = np.array(qc_list)
+            args["qc"] = np.array(qc_list, dtype=float)
 
         t0 = time.perf_counter()
         t, y = plant.compute_states(**args)
@@ -305,6 +307,7 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
         }
         return {"dataset": dataset, "metrics": metrics}
     except Exception as e:
+        logging.error(traceback.format_exc())
         return {"error": str(e)}
 
 
@@ -369,11 +372,11 @@ async def websocket_endpoint(websocket: WebSocket):
             
             # Prepare arguments for compute_states
             args = {"t_max": t_max, "rtol": rtol, "atol": atol}
-            if control_type and qc_list:
+            if control_type is not None and qc_list:
                 args["control_type"] = control_type
                 args["kp"] = kp
                 args["kd"] = kd
-                args["qc"] = np.array(qc_list)
+                args["qc"] = np.array(qc_list, dtype=float)
 
             t0 = time.perf_counter()
             t, y = plant.compute_states(**args)
@@ -423,6 +426,7 @@ async def websocket_endpoint(websocket: WebSocket):
             }
             await websocket.send_text(json.dumps({"dataset": dataset, "metrics": metrics}))
         except Exception as e:
+            logging.error(traceback.format_exc())
             await websocket.send_text(json.dumps({"error": str(e)}))
 
         # Keep the connection alive to allow future reconfiguration if desired
@@ -434,4 +438,5 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         print("Client disconnected.")
     except Exception as e:
+        logging.error(traceback.format_exc())
         print(f"An error occurred: {e}")
