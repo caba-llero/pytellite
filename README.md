@@ -1,33 +1,21 @@
-# Satellite HIL/SIL Simulator — Plant MVP
+# Pytellite
 
-This repository contains the initial Plant (Python) MVP for a modular Satellite HIL/SIL simulator.
+Pytellite is an open-source spacecraft attitude simulator. It allows to easily test control laws and visualize the satellite motion through a web app. Please note that as of September 2025, the app is in early stages of development. For more information, please visit https://caba.lle.ro/portfolio. 
 
-## Setup
-1. Create a Python 3.10+ environment.
-2. Install dependencies:
+## Testing Pytellite online
+Visit https://www.pytellite.org
+
+## Running Pytellite locally
+1) Python 3.10+ recommended
+2) Install dependencies:
 ```
 pip install -r requirements.txt
 ```
-
-## Run Plant
+3) Run the web app (dev):
 ```
-python -m plant.plant --config plant/config_default.yaml
+python app.py
 ```
+Then open: http://127.0.0.1:8000/ 
 
-The Plant emits NDJSON sensor frames (GPS @ 1 Hz, Gyro @ 100 Hz) to UDP `127.0.0.1:10001`, listens for actuator frames on `:10002`, and logs all frames to `logs/replay.ndjson`.
-
-## Tests
-Run unit tests:
-```
-pytest -q
-```
-
-## Sample NDJSON
-```
-{"type":"sensor","protocol_version":"1.0","schema_version":"gps-v1","sensor":"gps","t_sim":0.0,"t_sent":null,"seq":1,"payload":{"r_eci":[6871001.2,0.3,-1.0],"v_eci":[-0.2,7609.6,0.1]}}
-{"type":"sensor","protocol_version":"1.0","schema_version":"gyro-v1","sensor":"gyro","t_sim":0.0,"t_sent":null,"seq":1,"payload":{"omega_body":[0.0001,0.0,0.0]}}
-```
-
-See `docs/CONVENTIONS.md` for quaternion and unit conventions.
-
-
+## Upcoming features
+Pytellite will soon propagate the spacecraft's orbit, which will allow for more complex pointing types (such as nadir and Sun pointing, and detumbling). It will also allow to implement perturbation torques. Stay tuned!

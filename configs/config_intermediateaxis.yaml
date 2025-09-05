@@ -6,7 +6,7 @@ simulation:
   rng_seed: 12345
   t_final: 5.0
   # Precomputation defaults for GUI playback
-  t_max: 300.0
+  t_max: 10.0
   playback_speed: 1.0
   sample_rate: 30.0
   rtol: 1.0e-12
