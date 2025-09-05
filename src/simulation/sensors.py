@@ -7,6 +7,8 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+# Not currently used! Perhaps in the future we will use for 
+# software-in-the-loop simulation (the initial idea of the project)
 
 @dataclass
 class GPSSensorConfig:

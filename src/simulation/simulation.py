@@ -1,17 +1,4 @@
-"""
-Satellite Plant Simulator
 
-This module simulates the physical behavior of a satellite in orbit, including:
-- Orbital dynamics (position and velocity in Earth-Centered Inertial frame)
-- Attitude dynamics (orientation using quaternions)
-- Sensor modeling (GPS and gyro with realistic noise)
-- Real-time simulation with configurable time scaling
-- UDP communication with flight software
-- Data logging for replay and analysis
-
-The simulator runs in a Software-in-the-Loop (SIL) configuration where it provides
-realistic sensor data to flight software and receives actuator commands.
-"""
 
 from __future__ import annotations
 from scipy.integrate import solve_ivp

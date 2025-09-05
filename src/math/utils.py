@@ -7,6 +7,9 @@ from typing import Optional
 from jsonschema import Draft202012Validator
 
 
+# Not currently used! Perhaps in the future we will use for 
+# software-in-the-loop simulation (the initial idea of the project)
+
 def load_protocol_schemas(schema_path: str) -> dict:
     with open(schema_path, "r", encoding="utf-8") as f:
         return json.load(f)
