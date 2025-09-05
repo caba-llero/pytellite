@@ -19,26 +19,11 @@ import argparse
 import numpy as np
 import os
 import yaml
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any
 
-try:
-    from .quaternion_math import slerp
-except ImportError:
-    from plant.quaternion_math import slerp
-
-try:
-    # Try relative imports (when run as module)
-    from .dynamics import rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial, state_deriv
-    from .quaternion_math import slerp_array, slerp_quat_array, rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix
-except ImportError:
-    # Fall back to absolute imports (when imported by other scripts)
-    try:
-        from plant.dynamics import state_deriv, rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
-        from plant.quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix, slerp_quat_array
-    except ImportError:
-        # Last resort: import as if we're in the plant package directory
-        from dynamics import state_deriv, rk4_step_orbit, integrate_attitude_quat_mult, integrate_ang_vel_rk4, orbit_to_inertial
-        from quaternion_math import rotmatrix_to_quaternion, quat_to_euler, Quaternion, quat_to_rotmatrix, slerp_quat_array
+from ..math import quaternion as qm
+from .dynamics import state_deriv
+from ..math.quaternion import slerp_quat_array
 
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
@@ -75,40 +60,42 @@ class Plant:
         frame = ic.get("frame", "inertial")
 
         if frame == 'orbit':
-            q_bo_init = Quaternion(ic["q_ob"])
-            w_bo_init = np.array(ic["omega_bo_radps"], dtype=float)
+            raise NotImplementedError("Orbit frame initialization is not yet refactored.")
+            # The following code needs to be updated to use numpy arrays for quaternions
+            # q_bo_init = Quaternion(ic["q_ob"])
+            # w_bo_init = np.array(ic["omega_bo_radps"], dtype=float)
 
-            # Compute initial orbit frame
-            _, _, a0 = rk4_step_orbit(self.r0, self.v0, 0) # Get initial acceleration
-            R_io, w_oi = orbit_to_inertial(self.r0, self.v0, a0)
-            q_io = rotmatrix_to_quaternion(R_io)
+            # # Compute initial orbit frame
+            # _, _, a0 = rk4_step_orbit(self.r0, self.v0, 0) # Get initial acceleration
+            # R_io, w_oi = orbit_to_inertial(self.r0, self.v0, a0)
+            # q_io = rotmatrix_to_quaternion(R_io)
 
-            # Initialize body state wrt inertial frame
-            self.q_bi = q_io * q_bo_init
+            # # Initialize body state wrt inertial frame
+            # self.q_bi = q_io * q_bo_init
             
-            R_bo = quat_to_rotmatrix(q_bo_init)
-            self.w_bi = w_bo_init + R_bo.T @ w_oi
+            # R_bo = quat_to_rotmatrix(q_bo_init)
+            # self.w_bi = w_bo_init + R_bo.T @ w_oi
         elif frame == 'inertial':
-            self.q_bi = Quaternion(ic["q_bi"])
+            self.q_bi = np.array(ic["q_bi"])
             self.w_bi = np.array(ic["omega_bi_radps"], dtype=float)
         else:
             raise ValueError(f"Invalid initial condition frame: {frame}")
 
     def compute_states(self, t_max: float, rtol: float = 1e-12, atol: float = 1e-12, 
         control_type: Optional[str] = None, kp: Optional[float] = None, 
-        kd: Optional[float] = None, qc: Optional[Quaternion] = None) -> np.ndarray:
+        kd: Optional[float] = None, qc: Optional[np.ndarray] = None) -> np.ndarray:
         """
         Compute the states of the plant over a given time range.
         """
         t_span = (0, t_max)
-        y0 = np.hstack((self.r0, self.v0, self.w_bi, self.q_bi.q))
+        y0 = np.hstack((self.r0, self.v0, self.w_bi, self.q_bi))
         
         # Determine args for state_deriv based on provided control parameters
         if control_type is not None and kp is not None and kd is not None and qc is not None:
             args = (self.J, self.Ji, control_type, kp, kd, qc)
         else:
             # Fallback to zero_torque if control params are missing
-            args = (self.J, self.Ji, "zero_torque", 0.0, 0.0, Quaternion(0,0,0,1))
+            args = (self.J, self.Ji, "zero_torque", 0.0, 0.0, np.array([0,0,0,1.0]))
             
         sol = solve_ivp(state_deriv, t_span, y0, args=args, rtol=rtol, atol=atol)
         return sol.t, sol.y
@@ -127,7 +114,7 @@ class Plant:
         # Interpolate attitude quaternions (scalar-last [x, y, z, w])
         q_sampled = slerp_quat_array(t_sampled, t, y[9:13])
         # Keep Euler for legacy uses if needed
-        euler_sampled = slerp_array(t_sampled, t, y[9:13])
+        euler_sampled = qm.quat_to_euler(q_sampled)
         return t_sampled, r_sampled, v_sampled, euler_sampled, w_sampled, q_sampled
 
 
@@ -148,7 +135,7 @@ class Plant:
 
         self.t_sim += self.dt_sim
 
-        euler_angles = quat_to_euler(self.q_bi)
+        euler_angles = qm.quat_to_euler(self.q_bi)
         angular_velocity = self.w_bi
         
         return euler_angles, angular_velocity
@@ -172,7 +159,7 @@ def main():
     print(plant.q_bi)
     print(plant.w_bi)
     for _ in range(10000):
-        euler_angles = plant.update()
+        euler_angles, angular_velocity = plant.update()
         #print(f"t={plant.t_sim:.2f}, roll={euler_angles[0]:.2f}, pitch={euler_angles[1]:.2f}, yaw={euler_angles[2]:.2f}")
 
 

@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-try:
-    from plant.quaternion_math import Quaternion
-except ImportError:
-    # Fallback for direct import (when not used as part of plant package)
-    from quaternion_math import Quaternion
+from ..math import quaternion as qm
 from numpy.linalg import inv, solve
 from scipy.integrate import RK45
 
@@ -22,16 +18,8 @@ def skew(v: np.ndarray) -> np.ndarray:
         [-v[1], v[0], 0]
     ])
 
-def Psi(q: np.ndarray) -> np.ndarray:
-    return np.array([
-        [q[3], -q[2], q[1]],
-        [q[2], q[3], -q[0]],
-        [-q[1], q[0], q[3]],
-        [-q[0], -q[1], -q[2]]
-    ])
-
-def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray, 
-    control_type: str, kp: float, kd: float, qc: Quaternion) -> np.ndarray:
+def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
+    control_type: str, kp: float, kd: float, qc: np.ndarray) -> np.ndarray:
     """
     Compute the derivative of the state vector.
     Inputs:
@@ -43,20 +31,20 @@ def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
     r = y[0:3]
     v = y[3:6]
     w = y[6:9]
-    q = Quaternion(y[9:13])
-    q.normalize_inplace()
+    q = y[9:13]
+    q = qm.quat_normalize(q)
 
     L = control_laws(w, q, qc, control_type, kp, kd)
 
     drdt = v
     dvdt = -mu * r / np.linalg.norm(r) ** 3
-    dqdt = 0.5 * q ** w
+    dqdt = 0.5 * qm.quat_multiply_dot(q, w)
     dwdt = Ji @ (L - skew(w) @ J @ w)
 
-    dydt = np.hstack((drdt, dvdt, dwdt, dqdt.q.flatten()))
+    dydt = np.hstack((drdt, dvdt, dwdt, dqdt.flatten()))
     return dydt
 
-def control_laws(w: np.ndarray, q: Quaternion, qc: Quaternion, control_type: str, kp: float, kd: float):
+def control_laws(w: np.ndarray, q: np.ndarray, qc: np.ndarray, control_type: str, kp: float, kd: float):
     if control_type == "zero_torque":
         return np.zeros(3)
     elif control_type == "tracking":
@@ -66,18 +54,18 @@ def control_laws(w: np.ndarray, q: Quaternion, qc: Quaternion, control_type: str
     # Fallback to safe default if control_type is unknown
     return np.zeros(3)
 
-def control_law_tracking(w: np.ndarray, q: Quaternion, qc: Quaternion, kp: float, kd: float):
-    dq = q * ~qc
-    dq.normalize_inplace()
+def control_law_tracking(w: np.ndarray, q: np.ndarray, qc: np.ndarray, kp: float, kd: float):
+    dq = qm.quat_multiply_cross(q, qm.quat_inv(qc))
+    dq = qm.quat_normalize(dq)
 
-    L = - kp * np.sign(dq.q[3]) * dq.q[0:3] - kd * w
+    L = - kp * np.sign(dq[3]) * dq[0:3] - kd * w
     return L
 
-def control_law_nonlinear_tracking(w: np.ndarray, q: Quaternion, qc: Quaternion, kp: float, kd: float):
-    dq = q * ~qc
-    dq.normalize_inplace()
+def control_law_nonlinear_tracking(w: np.ndarray, q: np.ndarray, qc: np.ndarray, kp: float, kd: float):
+    dq = qm.quat_multiply_cross(q, qm.quat_inv(qc))
+    dq = qm.quat_normalize(dq)
 
-    L = - kp * np.sign(dq.q[3]) * dq.q[0:3] - kd * (1+np.dot(dq.q[0:3], dq.q[0:3])) * w
+    L = - kp * np.sign(dq[3]) * dq[0:3] - kd * (1+np.dot(dq[0:3], dq[0:3])) * w
     return L
 
 
@@ -128,31 +116,31 @@ def rk4_step_orbit(r_eci: np.ndarray, v_eci: np.ndarray, dt: float, mu: float = 
     return r_next, v_next, a_next
 
 
-def omega_to_quat_derivative(q: Quaternion, w: np.ndarray) -> Quaternion:
+def omega_to_quat_derivative(q: np.ndarray, w: np.ndarray) -> np.ndarray:
     """Convert angular velocity to quaternion derivative.
     Inputs:
-        q: Quaternion
+        q: np.ndarray
         w: np.ndarray of shape (3,)
     Output:
-        dq/dt: Quaternion
+        dq/dt: np.ndarray
 
     Source: Markley (Eq. 3.20, p.71)
     """
-    dqdt = 0.5 * q ** w
+    dqdt = 0.5 * qm.quat_multiply_dot(q, w)
     return dqdt
 
 # To do: integrate with matrix exponential instead of RK4 (no normalization needed, more exact)
-def integrate_attitude_rk4(q_bi: Quaternion, omega_b: np.ndarray, dt: float) -> Quaternion:
+def integrate_attitude_rk4(q_bi: np.ndarray, omega_b: np.ndarray, dt: float) -> np.ndarray:
     """
     Integrate attitude using RK4.
     Inputs:
-        q_bi: Quaternion - current body-to-inertial attitude
+        q_bi: np.ndarray - current body-to-inertial attitude
         omega_b: np.ndarray of shape (3,) - body angular velocity
         dt: float - time step
     Output:
-        q_next: Quaternion - next attitude
+        q_next: np.ndarray - next attitude
     """
-    def f(q_bi: Quaternion) -> Quaternion:
+    def f(q_bi: np.ndarray) -> np.ndarray:
         return omega_to_quat_derivative(q_bi, omega_b)
 
     k1 = f(q_bi)
@@ -161,18 +149,18 @@ def integrate_attitude_rk4(q_bi: Quaternion, omega_b: np.ndarray, dt: float) -> 
     k4 = f(q_bi + dt * k3)
 
     q_next = q_bi + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
-    return q_next.n
+    return qm.quat_normalize(q_next)
 
-def integrate_attitude_quat_mult(q_bi: Quaternion, omega_b: np.ndarray, dt: float) -> Quaternion:
+def integrate_attitude_quat_mult(q_bi: np.ndarray, omega_b: np.ndarray, dt: float) -> np.ndarray:
     """
     Integrate attitude using quaternion multiplication.
     Inputs:
-        q_bi: Quaternion - current body-to-inertial attitude
+        q_bi: np.ndarray - current body-to-inertial attitude
         omega_b: np.ndarray of shape (3,) - body angular velocity
         dt: float - time step
 
     Output:
-        q_next: Quaternion - next attitude
+        q_next: np.ndarray - next attitude
     """
 
     theta = np.linalg.norm(omega_b) * dt
@@ -182,9 +170,9 @@ def integrate_attitude_quat_mult(q_bi: Quaternion, omega_b: np.ndarray, dt: floa
     axis = omega_b / np.linalg.norm(omega_b)
     s2 = np.sin(theta / 2)
     c2 = np.cos(theta / 2)
-    dq = Quaternion(axis[0] * s2, axis[1] * s2, axis[2] * s2, c2)
-    q_next = q_bi * dq
-    return q_next.n
+    dq = np.array([axis[0] * s2, axis[1] * s2, axis[2] * s2, c2])
+    q_next = qm.quat_multiply_cross(q_bi, dq)
+    return qm.quat_normalize(q_next)
     
 
 
