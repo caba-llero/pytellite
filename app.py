@@ -21,5 +21,7 @@ if __name__ == "__main__":
     else:
         print("Starting server in development mode...")
         print(f"Open your browser and navigate to http://{host}:{port}")
+        # Disable Numba JIT locally to avoid long cold-start during development
+        os.environ.setdefault("DISABLE_NUMBA", "1")
     uvicorn.run("app:app", host=host, port=port, reload=reload)
     

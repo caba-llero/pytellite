@@ -1,4 +1,15 @@
-from numba import njit
+import os
+def _identity_decorator(func=None, **kwargs):
+    if func is None:
+        return lambda f: f
+    return func
+if os.getenv("DISABLE_NUMBA", "0") == "1":
+    njit = _identity_decorator  # type: ignore[assignment]
+else:
+    try:
+        from numba import njit  # type: ignore
+    except Exception:
+        njit = _identity_decorator  # type: ignore[assignment]
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import Slerp
