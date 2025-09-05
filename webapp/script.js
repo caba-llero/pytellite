@@ -225,6 +225,9 @@ createPlotlyChart('qwPlot', 'q<sub>w</sub>', '#e6e600', [-1, 1]);
 createPlotlyChart('pPlot', 'ω<sub>x</sub>', '#ff9f40', null);
 createPlotlyChart('qPlot', 'ω<sub>y</sub>', '#9966ff', null);
 createPlotlyChart('rPlot', 'ω<sub>z</sub>', '#c9cbcf', null);
+createPlotlyChart('hxPlot', 'h<sub>x</sub>', '#ffa600', null);
+createPlotlyChart('hyPlot', 'h<sub>y</sub>', '#bc5090', null);
+createPlotlyChart('hzPlot', 'h<sub>z</sub>', '#003f5c', null);
 
 function relabelAxes() {
     // No x-axis label, and omega y-axis labels without units
@@ -249,6 +252,9 @@ function rebuildSeriesUpTo(index) {
     mapAndRestyle('pPlot', dataset.p.slice(0, i + 1).map(v => v * of));
     mapAndRestyle('qPlot', dataset.q.slice(0, i + 1).map(v => v * of));
     mapAndRestyle('rPlot', dataset.r.slice(0, i + 1).map(v => v * of));
+    mapAndRestyle('hxPlot', dataset.hx.slice(0, i + 1));
+    mapAndRestyle('hyPlot', dataset.hy.slice(0, i + 1));
+    mapAndRestyle('hzPlot', dataset.hz.slice(0, i + 1));
 }
 
 // WebSocket & Controls
@@ -297,6 +303,9 @@ function updateAllVisuals(index, isScrubbing = false) {
             Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i] * of]] }, traceIndices);
             Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i] * of]] }, traceIndices);
             Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i] * of]] }, traceIndices);
+            Plotly.extendTraces('hxPlot',    { x: [[tx]], y: [[dataset.hx[i]]] }, traceIndices);
+            Plotly.extendTraces('hyPlot',    { x: [[tx]], y: [[dataset.hy[i]]] }, traceIndices);
+            Plotly.extendTraces('hzPlot',    { x: [[tx]], y: [[dataset.hz[i]]] }, traceIndices);
         }
     }
 }
@@ -374,6 +383,9 @@ function startPlaybackFromDataset(data, m=null) {
             Plotly.restyle('pPlot', { x: [[]], y: [[]] }, [0]);
             Plotly.restyle('qPlot', { x: [[]], y: [[]] }, [0]);
             Plotly.restyle('rPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('hxPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('hyPlot', { x: [[]], y: [[]] }, [0]);
+            Plotly.restyle('hzPlot', { x: [[]], y: [[]] }, [0]);
             relabelAxes();
         } catch (e) {
             console.warn('Plotly restyle failed, continuing.', e);

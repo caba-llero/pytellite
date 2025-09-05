@@ -68,6 +68,9 @@ class Plant:
         else:
             raise ValueError(f"Invalid initial condition frame: {frame}")
 
+        # Initial reaction wheel angular momentum (aligned with principal axes)
+        self.h0 = np.zeros(3, dtype=float)
+
     def compute_states(self, t_max: float, rtol: float = 1e-12, atol: float = 1e-12, 
         control_type: Optional[object] = None, kp: Optional[float] = None, 
         kd: Optional[float] = None, qc: Optional[np.ndarray] = None) -> np.ndarray:
@@ -75,7 +78,7 @@ class Plant:
         Compute the states of the plant over a given time range.
         """
         t_span = (0, t_max)
-        y0 = np.hstack((self.r0, self.v0, self.w_bi, self.q_bi))
+        y0 = np.hstack((self.r0, self.v0, self.w_bi, self.q_bi, self.h0))
         
         # Map control_type to integer expected by JITed dynamics
         def _map_control_type(ct: object) -> int:
@@ -115,9 +118,11 @@ class Plant:
         w_sampled = y_sampled[6:9]
         # Interpolate attitude quaternions (scalar-last [x, y, z, w])
         q_sampled = slerp_quat_array(t_sampled, t, y[9:13])
+        # Interpolate reaction wheel angular momentum components
+        h_sampled = np.array([np.interp(t_sampled, t, component) for component in y[13:16]])
         # Keep Euler for legacy uses if needed
         euler_sampled = qm.quat_to_euler(q_sampled)
-        return t_sampled, r_sampled, v_sampled, euler_sampled, w_sampled, q_sampled
+        return t_sampled, r_sampled, v_sampled, euler_sampled, w_sampled, q_sampled, h_sampled
 
 
 ### DEPRECATED

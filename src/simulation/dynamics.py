@@ -35,6 +35,8 @@ def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
     v = y[3:6]
     w = y[6:9]
     q = y[9:13]
+    # Wheel angular momentum vector h (aligned with principal axes)
+    h = y[13:16]
     # Ensure matrix dtypes are float64 for stable Numba matmul
     Jf = J.astype(np.float64)
     Jif = Ji.astype(np.float64)
@@ -46,8 +48,10 @@ def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
     dvdt = -mu * r / np.linalg.norm(r) ** 3
     dqdt = 0.5 * qm.quat_multiply_dot(q, w)
     dwdt = Jif @ (L - (skew(w) @ Jf) @ w)
+    # Reaction wheel momentum dynamics in body frame
+    dhdt = -skew(w) @ h - L
 
-    dydt = np.hstack((drdt, dvdt, dwdt, dqdt))
+    dydt = np.hstack((drdt, dvdt, dwdt, dqdt, dhdt))
     return dydt
 
 @njit

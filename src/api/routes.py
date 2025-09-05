@@ -259,7 +259,7 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
         t0 = time.perf_counter()
         t, y = plant.compute_states(**args)
         t_compute = time.perf_counter() - t0
-        t_s, r_s, v_s, eul_s, w_s, q_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+        t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
         # Quaternion components (scalar last): qx, qy, qz, qw
         qx_arr = q_s[0, :].tolist()
         qy_arr = q_s[1, :].tolist()
@@ -288,6 +288,9 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             "p": w_s[0, :].tolist(),
             "q": w_s[1, :].tolist(),
             "r": w_s[2, :].tolist(),
+            "hx": h_s[0, :].tolist(),
+            "hy": h_s[1, :].tolist(),
+            "hz": h_s[2, :].tolist(),
             "sample_rate": sample_rate,
             # Earth rotation parameters
             "earth_initial_sidereal_angle_rad": theta0_rad,
@@ -381,7 +384,7 @@ async def websocket_endpoint(websocket: WebSocket):
             t0 = time.perf_counter()
             t, y = plant.compute_states(**args)
             t_compute = time.perf_counter() - t0
-            t_s, r_s, v_s, eul_s, w_s, q_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+            t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
             # Quaternion components (scalar last): qx, qy, qz, qw
             qx_arr = q_s[0, :].tolist()
             qy_arr = q_s[1, :].tolist()
@@ -408,6 +411,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 "p": w_s[0, :].tolist(),
                 "q": w_s[1, :].tolist(),
                 "r": w_s[2, :].tolist(),
+                "hx": h_s[0, :].tolist(),
+                "hy": h_s[1, :].tolist(),
+                "hz": h_s[2, :].tolist(),
                 "sample_rate": sample_rate,
                 # Earth rotation parameters
                 "earth_initial_sidereal_angle_rad": theta0_rad,
