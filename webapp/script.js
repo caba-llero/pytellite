@@ -194,10 +194,10 @@ function getOmegaUnitLabel() {
     return unit === 'deg' ? 'deg/s' : 'rad/s';
 }
 
-function createPlotlyChart(divId, yAxisTitle, color, y_range) {
+function createMultiTraceChart(divId, yAxisTitle, traces) {
     try {
         if (typeof Plotly === 'undefined') return;
-        const data = [{ x: [], y: [], type: 'scatter', mode: 'lines', line: { color: color, width: 2 } }];
+        const data = traces.map(t => ({ x: [], y: [], type: 'scatter', mode: 'lines', line: { color: t.color, width: 2 }, name: t.name }));
         const layout = {
             paper_bgcolor: '#1a1a1a', plot_bgcolor: '#1a1a1a',
             margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
@@ -207,33 +207,35 @@ function createPlotlyChart(divId, yAxisTitle, color, y_range) {
                 gridcolor: '#444',
                 automargin: true,
                 title: { text: yAxisTitle, font: { color: 'white', size: 12 }, standoff: 12 }
-            }
+            },
+            legend: { font: { color: 'white' } }
         };
-        if (y_range !== undefined && y_range !== null) {
-            layout.yaxis.range = y_range;
-        }
         Plotly.newPlot(divId, data, layout, { responsive: true });
     } catch (e) {
-        // If Plotly fails to load, skip charts gracefully
         console.warn('Plotly unavailable, skipping charts.', e);
     }
 }
-createPlotlyChart('qxPlot', 'q<sub>x</sub>', '#ff6384', [-1, 1]);
-createPlotlyChart('qyPlot', 'q<sub>y</sub>', '#36a2eb', [-1, 1]);
-createPlotlyChart('qzPlot', 'q<sub>z</sub>', '#4bc0c0', [-1, 1]);
-createPlotlyChart('qwPlot', 'q<sub>w</sub>', '#e6e600', [-1, 1]);
-createPlotlyChart('pPlot', 'ω<sub>x</sub>', '#ff9f40', null);
-createPlotlyChart('qPlot', 'ω<sub>y</sub>', '#9966ff', null);
-createPlotlyChart('rPlot', 'ω<sub>z</sub>', '#c9cbcf', null);
-createPlotlyChart('hxPlot', 'h<sub>x</sub>', '#ffa600', null);
-createPlotlyChart('hyPlot', 'h<sub>y</sub>', '#bc5090', null);
-createPlotlyChart('hzPlot', 'h<sub>z</sub>', '#003f5c', null);
+
+// Colors aligned with 3D axes: x red, y green, z blue; quaternion scalar white
+createMultiTraceChart('quatPlot', 'Attitude quaternion', [
+    { name: 'q<sub>x</sub>', color: '#ff0000' },
+    { name: 'q<sub>y</sub>', color: '#00ff00' },
+    { name: 'q<sub>z</sub>', color: '#0000ff' },
+    { name: 'q<sub>w</sub>', color: '#ffffff' }
+]);
+createMultiTraceChart('omegaPlot', 'Angular velocity', [
+    { name: 'ω<sub>x</sub>', color: '#ff0000' },
+    { name: 'ω<sub>y</sub>', color: '#00ff00' },
+    { name: 'ω<sub>z</sub>', color: '#0000ff' }
+]);
+createMultiTraceChart('hPlot', 'Wheel angular momentum', [
+    { name: 'h<sub>x</sub>', color: '#ff0000' },
+    { name: 'h<sub>y</sub>', color: '#00ff00' },
+    { name: 'h<sub>z</sub>', color: '#0000ff' }
+]);
 
 function relabelAxes() {
-    // No x-axis label, and omega y-axis labels without units
-    Plotly.relayout('pPlot', { 'yaxis.title.text': 'ω<sub>x</sub>' });
-    Plotly.relayout('qPlot', { 'yaxis.title.text': 'ω<sub>y</sub>' });
-    Plotly.relayout('rPlot', { 'yaxis.title.text': 'ω<sub>z</sub>' });
+    // Nothing dynamic to relabel for multi-trace plots beyond unit conversions handled in data
 }
 
 function rebuildSeriesUpTo(index) {
@@ -242,19 +244,27 @@ function rebuildSeriesUpTo(index) {
     const tf = getTimeFactor();
     const of = getOmegaFactor();
     const xArr = dataset.t.slice(0, i + 1).map(t => t * tf);
-    const mapAndRestyle = (id, y) => {
-        Plotly.restyle(id, { x: [xArr], y: [y] }, [0]);
+    const restyleMulti = (id, yArrays) => {
+        // yArrays: array of arrays matching trace order
+        const xs = yArrays.map(() => xArr);
+        Plotly.restyle(id, { x: xs, y: yArrays }, [0,1,2,3].slice(0, yArrays.length));
     };
-    mapAndRestyle('qxPlot', dataset.qx.slice(0, i + 1));
-    mapAndRestyle('qyPlot', dataset.qy.slice(0, i + 1));
-    mapAndRestyle('qzPlot', dataset.qz.slice(0, i + 1));
-    mapAndRestyle('qwPlot', dataset.qw.slice(0, i + 1));
-    mapAndRestyle('pPlot', dataset.p.slice(0, i + 1).map(v => v * of));
-    mapAndRestyle('qPlot', dataset.q.slice(0, i + 1).map(v => v * of));
-    mapAndRestyle('rPlot', dataset.r.slice(0, i + 1).map(v => v * of));
-    mapAndRestyle('hxPlot', dataset.hx.slice(0, i + 1));
-    mapAndRestyle('hyPlot', dataset.hy.slice(0, i + 1));
-    mapAndRestyle('hzPlot', dataset.hz.slice(0, i + 1));
+    restyleMulti('quatPlot', [
+        dataset.qx.slice(0, i + 1),
+        dataset.qy.slice(0, i + 1),
+        dataset.qz.slice(0, i + 1),
+        dataset.qw.slice(0, i + 1)
+    ]);
+    restyleMulti('omegaPlot', [
+        dataset.p.slice(0, i + 1).map(v => v * of),
+        dataset.q.slice(0, i + 1).map(v => v * of),
+        dataset.r.slice(0, i + 1).map(v => v * of)
+    ]);
+    restyleMulti('hPlot', [
+        dataset.hx.slice(0, i + 1),
+        dataset.hy.slice(0, i + 1),
+        dataset.hz.slice(0, i + 1)
+    ]);
 }
 
 // WebSocket & Controls
@@ -295,17 +305,10 @@ function updateAllVisuals(index, isScrubbing = false) {
             const tf = getTimeFactor();
             const of = getOmegaFactor();
             const tx = dataset.t[i] * tf;
-            const traceIndices = [0];
-            Plotly.extendTraces('qxPlot',  { x: [[tx]], y: [[dataset.qx[i]]] }, traceIndices);
-            Plotly.extendTraces('qyPlot', { x: [[tx]], y: [[dataset.qy[i]]] }, traceIndices);
-            Plotly.extendTraces('qzPlot',   { x: [[tx]], y: [[dataset.qz[i]]] }, traceIndices);
-            Plotly.extendTraces('qwPlot',   { x: [[tx]], y: [[dataset.qw[i]]] }, traceIndices);
-            Plotly.extendTraces('pPlot',     { x: [[tx]], y: [[dataset.p[i] * of]] }, traceIndices);
-            Plotly.extendTraces('qPlot',     { x: [[tx]], y: [[dataset.q[i] * of]] }, traceIndices);
-            Plotly.extendTraces('rPlot',     { x: [[tx]], y: [[dataset.r[i] * of]] }, traceIndices);
-            Plotly.extendTraces('hxPlot',    { x: [[tx]], y: [[dataset.hx[i]]] }, traceIndices);
-            Plotly.extendTraces('hyPlot',    { x: [[tx]], y: [[dataset.hy[i]]] }, traceIndices);
-            Plotly.extendTraces('hzPlot',    { x: [[tx]], y: [[dataset.hz[i]]] }, traceIndices);
+            // Extend traces for multi-trace plots
+            Plotly.extendTraces('quatPlot',  { x: [[tx],[tx],[tx],[tx]], y: [[dataset.qx[i]],[dataset.qy[i]],[dataset.qz[i]],[dataset.qw[i]]] }, [0,1,2,3]);
+            Plotly.extendTraces('omegaPlot', { x: [[tx],[tx],[tx]], y: [[dataset.p[i] * of],[dataset.q[i] * of],[dataset.r[i] * of]] }, [0,1,2]);
+            Plotly.extendTraces('hPlot',     { x: [[tx],[tx],[tx]], y: [[dataset.hx[i]],[dataset.hy[i]],[dataset.hz[i]]] }, [0,1,2]);
         }
     }
 }
@@ -376,16 +379,26 @@ function startPlaybackFromDataset(data, m=null) {
     frameIndex = 0;
     if (typeof Plotly !== 'undefined') {
         try {
-            Plotly.restyle('qxPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('qyPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('qzPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('qwPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('pPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('qPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('rPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('hxPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('hyPlot', { x: [[]], y: [[]] }, [0]);
-            Plotly.restyle('hzPlot', { x: [[]], y: [[]] }, [0]);
+            // Clear multi-trace plots
+            Plotly.deleteTraces('quatPlot', [0,1,2,3]);
+            Plotly.deleteTraces('omegaPlot', [0,1,2]);
+            Plotly.deleteTraces('hPlot', [0,1,2]);
+            createMultiTraceChart('quatPlot', 'Attitude quaternion', [
+                { name: 'q<sub>x</sub>', color: '#ff0000' },
+                { name: 'q<sub>y</sub>', color: '#00ff00' },
+                { name: 'q<sub>z</sub>', color: '#0000ff' },
+                { name: 'q<sub>w</sub>', color: '#ffffff' }
+            ]);
+            createMultiTraceChart('omegaPlot', 'Angular velocity', [
+                { name: 'ω<sub>x</sub>', color: '#ff0000' },
+                { name: 'ω<sub>y</sub>', color: '#00ff00' },
+                { name: 'ω<sub>z</sub>', color: '#0000ff' }
+            ]);
+            createMultiTraceChart('hPlot', 'Wheel angular momentum', [
+                { name: 'h<sub>x</sub>', color: '#ff0000' },
+                { name: 'h<sub>y</sub>', color: '#00ff00' },
+                { name: 'h<sub>z</sub>', color: '#0000ff' }
+            ]);
             relabelAxes();
         } catch (e) {
             console.warn('Plotly restyle failed, continuing.', e);
