@@ -104,7 +104,7 @@ simulation:
   t_final: 5.0
   # Precomputation defaults for GUI playback
   t_max: 300.0
-  playback_speed: 1.0
+  playback_speed: 10.0
   sample_rate: 30.0
   rtol: 1.0e-12
   atol: 1.0e-12

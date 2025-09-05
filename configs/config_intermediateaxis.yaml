@@ -1,4 +1,4 @@
-name: Default
+name: Intermediate axis instability
 simulation:
   dt_sim: 0.1
   time_scale: 100.0
@@ -14,8 +14,8 @@ simulation:
 
 spacecraft:
   mass: 10.0
-  inertia: [1,9000,12000]
-  shape: [1, 0.9, 1.2]
+  inertia: [3000,2000,1000]
+  shape: [3, 2, 1]
 
 sensors:
   gps:
@@ -77,8 +77,8 @@ initial_conditions:
   omega_bo_radps: [0.2, -0.1, 0.3]
 
   # Inertial frame initial conditions
-  q_bi: [0.6853, 0.6953, 0.1531, 0.1531]
-  omega_bi_radps: [0.1, 0.2, 0.3]
+  q_bi: [0, 0, 0, 1]
+  omega_bi_radps: [0.01, 5, 0.01]
 
   # Orbit elements for UI defaults
   orbit:

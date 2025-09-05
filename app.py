@@ -67,10 +67,17 @@ async def healthz():
 
 
 def _load_defaults() -> dict:
-    # Prefer root-level configs; fallback to legacy plant/config_default.yaml
-    root_cfg = os.path.join(os.path.dirname(__file__), "configs", "config_default.yaml")
+    # Prefer Markley preset as default; fall back to intermediate axis preset, then legacy
+    cfg_dir = os.path.join(os.path.dirname(__file__), "configs")
+    root_markley = os.path.join(cfg_dir, "config_markley_7_1.yaml")
+    root_intermediate = os.path.join(cfg_dir, "config_intermediateaxis.yaml")
     legacy_cfg = os.path.join(os.path.dirname(__file__), "plant", "config_default.yaml")
-    config_path = root_cfg if os.path.exists(root_cfg) else legacy_cfg
+    if os.path.exists(root_markley):
+        config_path = root_markley
+    elif os.path.exists(root_intermediate):
+        config_path = root_intermediate
+    else:
+        config_path = legacy_cfg
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
