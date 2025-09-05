@@ -77,7 +77,7 @@ def control_law_nonlinear_tracking(w: np.ndarray, q: Quaternion, qc: Quaternion,
     dq = q * ~qc
     dq.normalize_inplace()
 
-    L = - kp * np.sign(dq.q[3]) * dq.q[0:3] - kd * (1-np.dot(dq.q[0:3], dq.q[0:3])) * w
+    L = - kp * np.sign(dq.q[3]) * dq.q[0:3] - kd * (1+np.dot(dq.q[0:3], dq.q[0:3])) * w
     return L
 
 
