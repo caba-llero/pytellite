@@ -180,11 +180,13 @@ def merge_with_defaults(payload: dict) -> dict:
 
     # Normalize control_type to internal identifiers used by dynamics
     if control_type is not None:
-        # Accept values: none|inertial|zero_torque|tracking
-        ct = str(control_type).lower()
+        # Accept values: none | zero_torque | inertial | tracking | inertial_linear | inertial_nonlinear | nonlinear_tracking
+        ct = str(control_type).lower().strip()
         if ct in ("none", "zero_torque"):
             mapped = "zero_torque"
-        elif ct in ("inertial", "tracking"):
+        elif ct in ("inertial_nonlinear", "nonlinear_tracking"):
+            mapped = "nonlinear_tracking"
+        elif ct in ("inertial", "inertial_linear", "tracking"):
             mapped = "tracking"
         else:
             mapped = "zero_torque"

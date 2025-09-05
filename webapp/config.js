@@ -108,7 +108,8 @@ async function init() {
     const control = saved.control || defaults.control || { control_type: 'none', kp: 0.0, kd: 0.0, qc: [0,0,0,1] };
     
     let ctrlType = control.control_type || 'none';
-    if (ctrlType === 'tracking') ctrlType = 'inertial';
+    if (ctrlType === 'tracking') ctrlType = 'inertial_linear';
+    if (ctrlType === 'nonlinear_tracking') ctrlType = 'inertial_nonlinear';
     if (ctrlType === 'zero_torque') ctrlType = 'none';
 
     const kp = control.kp ?? 0.0;
@@ -145,7 +146,7 @@ async function init() {
     const ctrlParams = document.getElementById('CTRL_PARAMS');
     if (ctrlSelect) {
         ctrlSelect.value = ctrlType;
-        const show = ctrlType === 'inertial';
+        const show = (ctrlType === 'inertial_linear' || ctrlType === 'inertial_nonlinear');
         ctrlParams.style.display = show ? '' : 'none';
     }
     setValue('KP', kp);
@@ -205,7 +206,7 @@ async function init() {
             },
             simulation: { t_max: params.tmax, playback_speed: params.play, sample_rate: params.sr, rtol: params.rtol, atol: params.atol },
             control: {
-                control_type: (params.ctrl === 'inertial' ? 'tracking' : 'zero_torque'),
+                control_type: (params.ctrl === 'inertial_linear' ? 'tracking' : (params.ctrl === 'inertial_nonlinear' ? 'nonlinear_tracking' : 'zero_torque')),
                 kp: params.kp, kd: params.kd,
                 qc: [params.cq0, params.cq1, params.cq2, params.cq3]
             }
@@ -218,7 +219,8 @@ async function init() {
     const ctrlSelect2 = document.getElementById('CTRL_TYPE');
     if (ctrlSelect2) {
         ctrlSelect2.addEventListener('change', () => {
-            const show = ctrlSelect2.value === 'inertial';
+            const v = ctrlSelect2.value;
+            const show = (v === 'inertial_linear' || v === 'inertial_nonlinear');
             const paramsDiv = document.getElementById('CTRL_PARAMS');
             if (paramsDiv) paramsDiv.style.display = show ? '' : 'none';
         });
@@ -288,15 +290,15 @@ async function init() {
                 if (ctrlSelect3) {
                     let tRaw = (ctrl.control_type || 'none').toString().toLowerCase().trim();
                     let t;
-                    if (tRaw.includes('tracking') || tRaw.includes('inertial')) {
-                        t = 'inertial';
-                    } else if (tRaw.includes('zero') || tRaw.includes('none')) {
-                        t = 'none';
+                    if (tRaw.includes('nonlinear')) {
+                        t = 'inertial_nonlinear';
+                    } else if (tRaw.includes('tracking') || tRaw.includes('inertial')) {
+                        t = 'inertial_linear';
                     } else {
                         t = 'none';
                     }
                     ctrlSelect3.value = t;
-                    const show = t === 'inertial';
+                    const show = (t === 'inertial_linear' || t === 'inertial_nonlinear');
                     const paramsDiv = document.getElementById('CTRL_PARAMS');
                     if (paramsDiv) paramsDiv.style.display = show ? '' : 'none';
                     // Ensure any listeners update dependent UI

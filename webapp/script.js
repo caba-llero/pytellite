@@ -446,7 +446,9 @@ socket.onopen = () => {
     if (sr !== null) payload.sample_rate = parseFloat(sr);
     if (rtol !== null) payload.rtol = parseFloat(rtol);
     if (atol !== null) payload.atol = parseFloat(atol);
-    if (ctrl) payload.control_type = ctrl;
+    if (ctrl === 'inertial_linear') payload.control_type = 'tracking';
+    else if (ctrl === 'inertial_nonlinear') payload.control_type = 'nonlinear_tracking';
+    else if (ctrl) payload.control_type = ctrl;
     if (kp !== null) payload.kp = parseFloat(kp);
     if (kd !== null) payload.kd = parseFloat(kd);
     const qc = [cq0, cq1, cq2, cq3].map(v => v !== null ? parseFloat(v) : null);

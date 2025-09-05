@@ -61,6 +61,10 @@ def control_laws(w: np.ndarray, q: Quaternion, qc: Quaternion, control_type: str
         return np.zeros(3)
     elif control_type == "tracking":
         return control_law_tracking(w, q, qc, kp, kd)
+    elif control_type == "nonlinear_tracking":
+        return control_law_nonlinear_tracking(w, q, qc, kp, kd)
+    # Fallback to safe default if control_type is unknown
+    return np.zeros(3)
 
 def control_law_tracking(w: np.ndarray, q: Quaternion, qc: Quaternion, kp: float, kd: float):
     dq = q * ~qc
@@ -69,7 +73,12 @@ def control_law_tracking(w: np.ndarray, q: Quaternion, qc: Quaternion, kp: float
     L = - kp * np.sign(dq.q[3]) * dq.q[0:3] - kd * w
     return L
 
+def control_law_nonlinear_tracking(w: np.ndarray, q: Quaternion, qc: Quaternion, kp: float, kd: float):
+    dq = q * ~qc
+    dq.normalize_inplace()
 
+    L = - kp * np.sign(dq.q[3]) * dq.q[0:3] - kd * (1-np.dot(dq.q[0:3], dq.q[0:3])) * w
+    return L
 
 
 

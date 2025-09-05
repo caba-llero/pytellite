@@ -63,7 +63,9 @@
             const cq2 = readFloat('cq2');
             const cq3 = readFloat('cq3');
             const qc = [cq0, cq1, cq2, cq3];
-            if (ctrl) payload.control_type = ctrl;
+            if (ctrl === 'inertial_linear') payload.control_type = 'tracking';
+            else if (ctrl === 'inertial_nonlinear') payload.control_type = 'nonlinear_tracking';
+            else if (ctrl) payload.control_type = ctrl;
             if (typeof kp === 'number' && !isNaN(kp)) payload.kp = kp;
             if (typeof kd === 'number' && !isNaN(kd)) payload.kd = kd;
             if (qc.every(v => typeof v === 'number' && !isNaN(v))) payload.qc = qc;
