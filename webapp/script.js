@@ -199,12 +199,12 @@ function createMultiTraceChart(divId, yAxisTitle, traces) {
         if (typeof Plotly === 'undefined') return;
         const data = traces.map(t => ({ x: [], y: [], type: 'scatter', mode: 'lines', line: { color: t.color, width: 2 }, name: t.name }));
         const layout = {
-            paper_bgcolor: '#1a1a1a', plot_bgcolor: '#1a1a1a',
+            paper_bgcolor: '#000000', plot_bgcolor: '#000000',
             margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
-            xaxis: { color: 'white', gridcolor: '#444' },
+            xaxis: { color: 'white', gridcolor: '#222' },
             yaxis: {
                 color: 'white',
-                gridcolor: '#444',
+                gridcolor: '#222',
                 automargin: true,
                 title: { text: yAxisTitle, font: { color: 'white', size: 12 }, standoff: 12 }
             },
