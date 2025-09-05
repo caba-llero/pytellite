@@ -41,7 +41,7 @@ def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
     dqdt = 0.5 * qm.quat_multiply_dot(q, w)
     dwdt = Ji @ (L - skew(w) @ J @ w)
 
-    dydt = np.hstack((drdt, dvdt, dwdt, dqdt.flatten()))
+    dydt = np.hstack((drdt, dvdt, dwdt, dqdt.reshape(4,)))
     return dydt
 
 def control_laws(w: np.ndarray, q: np.ndarray, qc: np.ndarray, control_type: str, kp: float, kd: float):
@@ -58,14 +58,15 @@ def control_law_tracking(w: np.ndarray, q: np.ndarray, qc: np.ndarray, kp: float
     dq = qm.quat_multiply_cross(q, qm.quat_inv(qc))
     dq = qm.quat_normalize(dq)
 
-    L = - kp * np.sign(dq[3]) * dq[0:3] - kd * w
+    L = - kp * np.sign(dq[3]) * dq[0:3].flatten() - kd * w
     return L
 
 def control_law_nonlinear_tracking(w: np.ndarray, q: np.ndarray, qc: np.ndarray, kp: float, kd: float):
     dq = qm.quat_multiply_cross(q, qm.quat_inv(qc))
     dq = qm.quat_normalize(dq)
 
-    L = - kp * np.sign(dq[3]) * dq[0:3] - kd * (1+np.dot(dq[0:3], dq[0:3])) * w
+    dq_vec = dq[0:3].flatten()
+    L = - kp * np.sign(dq[3]) * dq_vec - kd * (1 + np.dot(dq_vec, dq_vec)) * w
     return L
 
 

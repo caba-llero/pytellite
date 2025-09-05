@@ -231,4 +231,17 @@ def rotmatrix_to_euler321(A: np.ndarray) -> np.ndarray:
 
 def quat_to_euler(q: np.ndarray) -> np.ndarray:
     """Quaternion to Euler angles (ZYX sequence for roll, pitch, yaw)"""
-    return rotmatrix_to_euler321(quat_to_rotmatrix(q))
+    # If q is a single quaternion (4,) or (4,1)
+    if q.ndim == 1 or (q.ndim == 2 and q.shape[1] == 1):
+        return rotmatrix_to_euler321(quat_to_rotmatrix(q))
+    
+    # If q is an array of quaternions (4, N)
+    num_quats = q.shape[1]
+    euler_angles = np.empty((3, num_quats))
+    for i in range(num_quats):
+        # Extract each quaternion
+        q_i = q[:, i].reshape(4, 1)
+        # Convert to Euler and store
+        euler_angles[:, i] = rotmatrix_to_euler321(quat_to_rotmatrix(q_i)).flatten()
+        
+    return euler_angles
