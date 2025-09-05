@@ -199,7 +199,7 @@ function createMultiTraceChart(divId, yAxisTitle, traces) {
         if (typeof Plotly === 'undefined') return;
         const data = traces.map(t => ({ x: [], y: [], type: 'scatter', mode: 'lines', line: { color: t.color, width: 2 }, name: t.name }));
         const layout = {
-            paper_bgcolor: '#000000', plot_bgcolor: '#000000',
+            paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
             margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
             xaxis: { color: 'white', gridcolor: '#222' },
             yaxis: {
