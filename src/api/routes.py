@@ -63,6 +63,26 @@ async def serve_favicon_16():
 async def serve_manifest():
     return FileResponse(os.path.join(os.path.dirname(__file__), "..", "..", "site.webmanifest"))
 
+@router.get("/ga.js")
+async def serve_ga_js():
+    ga_id = os.getenv("GA_MEASUREMENT_ID", "").strip()
+    if not ga_id:
+        return Response(content="", media_type="application/javascript")
+    # Lightweight GA loader without exposing ID in repo; loads gtag and configures it
+    js = (
+        "(function(){" 
+        f"var id='{ga_id}';" 
+        "var s=document.createElement('script');s.async=true;" 
+        "+function(){s.src='https://www.googletagmanager.com/gtag/js?id='+id;}();" 
+        "document.head.appendChild(s);" 
+        "window.dataLayer=window.dataLayer||[];" 
+        "function gtag(){dataLayer.push(arguments);}window.gtag=gtag;" 
+        "gtag('js', new Date());" 
+        "gtag('config', id);" 
+        "})();"
+    )
+    return Response(content=js, media_type="application/javascript")
+
 @router.get("/healthz")
 async def healthz():
     return {"status": "ok"}
