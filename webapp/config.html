@@ -79,16 +79,16 @@
             <div class="panels">
                 <section class="tab-panel active" data-tab="shape" role="tabpanel">
                     <div class="section">
-                        <h3>Spacecraft Inertia (Principal Axes)</h3>
+                        <h3>Spacecraft inertia (principal axes)</h3>
                         <div class="field-group">
                             <div class="li-grid">
-                                <label for="J1">J1</label>
+                                <label for="J1">J<sub>x</sub></label>
                                 <input id="J1" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">kg·m²</div>
-                                <label for="J2">J2</label>
+                                <label for="J2">J<sub>y</sub></label>
                                 <input id="J2" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">kg·m²</div>
-                                <label for="J3">J3</label>
+                                <label for="J3">J<sub>z</sub></label>
                                 <input id="J3" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">kg·m²</div>
                             </div>
@@ -96,16 +96,16 @@
                     </div>
 
                     <div class="section">
-                        <h3>Rectangular Cuboid Shape</h3>
+                        <h3>Spacecraft dimensions</h3>
                         <div class="field-group">
                             <div class="li-grid">
-                                <label for="SX">Size X</label>
+                                <label for="SX">Length (x)</label>
                                 <input id="SX" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">m</div>
-                                <label for="SY">Size Y</label>
+                                <label for="SY">Width (y)</label>
                                 <input id="SY" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">m</div>
-                                <label for="SZ">Size Z</label>
+                                <label for="SZ">Height (z)</label>
                                 <input id="SZ" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">m</div>
                             </div>
@@ -175,13 +175,13 @@
                         <div class="hint">Body frame with respect to inertial frame, in body frame coordinates</div>
                         <div class="field-group">
                             <div class="li-grid">
-                                <label for="WX">ωx</label>
+                                <label for="WX">ω<sub>x</sub></label>
                                 <input id="WX" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">rad/s</div>
-                                <label for="WY">ωy</label>
+                                <label for="WY">ω<sub>y</sub></label>
                                 <input id="WY" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">rad/s</div>
-                                <label for="WZ">ωz</label>
+                                <label for="WZ">ω<sub>z</sub></label>
                                 <input id="WZ" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">rad/s</div>
                             </div>
@@ -195,16 +195,16 @@
                         <div class="hint">Body frame with respect to inertial frame. Scalar component last</div>
                         <div class="field-group">
                             <div class="li-grid">
-                                <label for="QX">qx</label>
+                                <label for="QX">q<sub>x</sub></label>
                                 <input id="QX" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">unitless</div>
-                                <label for="QY">qy</label>
+                                <label for="QY">q<sub>y</sub></label>
                                 <input id="QY" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">unitless</div>
-                                <label for="QZ">qz</label>
+                                <label for="QZ">q<sub>z</sub></label>
                                 <input id="QZ" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">unitless</div>
-                                <label for="QW">qw</label>
+                                <label for="QW">q<sub>w</sub></label>
                                 <input id="QW" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">unitless</div>
                             </div>
@@ -231,10 +231,10 @@
                             <div class="li-grid">
                                 <label for="SMA">semi major axis</label>
                                 <input id="SMA" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units">deg</div>
+                                <div class="units">km</div>
                                 <label for="ECC">eccentricity</label>
                                 <input id="ECC" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units">deg</div>
+                                <div class="units">unitless</div>
                                 <label for="INC">inclination</label>
                                 <input id="INC" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">deg</div>
@@ -273,13 +273,13 @@
                         <h3>Integration</h3>
                         <div class="field-group">
                             <div class="li-grid">
-                                <label for="TMAX">t_max</label>
+                                <label for="TMAX">Integration time</label>
                                 <input id="TMAX" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">s</div>
-                                <label for="RTOL">rtol</label>
+                                <label for="RTOL">Relative tolerance</label>
                                 <input id="RTOL" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">unitless</div>
-                                <label for="ATOL">atol</label>
+                                <label for="ATOL">Absolute tolerance</label>
                                 <input id="ATOL" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">unitless</div>
                             </div>
