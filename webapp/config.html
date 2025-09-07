@@ -132,13 +132,13 @@
                     <div class="group-spacer"></div>
 
                     <div id="CTRL_PARAMS" class="section" style="display:none">
-                        <h3>Inertial pointing parameters</h3>
+                        <h3>Control law parameters</h3>
                         <div class="field-group">
                             <div class="li-grid">
-                                <label for="KP">kp</label>
+                                <label for="KP">Proportional gain k<sub>p</sub></label>
                                 <input id="KP" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units"></div>
-                                <label for="KD">kd</label>
+                                <label for="KD">Derivative gain k<sub>d</sub></label>
                                 <input id="KD" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units"></div>
                             </div>
@@ -147,17 +147,18 @@
                         <div class="group-spacer"></div>
 
                         <div class="field-group">
+                            <h3>Target inertial attitude quaternion</h3>
                             <div class="li-grid">
-                                <label for="CQ0">q0</label>
+                                <label for="CQ0">q<sub>x</sub></label>
                                 <input id="CQ0" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units"></div>
-                                <label for="CQ1">q1</label>
+                                <label for="CQ1">q<sub>y</sub></label>
                                 <input id="CQ1" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units"></div>
-                                <label for="CQ2">q2</label>
+                                <label for="CQ2">q<sub>z</sub></label>
                                 <input id="CQ2" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units"></div>
-                                <label for="CQ3">q3</label>
+                                <label for="CQ3">q<sub>w</sub></label>
                                 <input id="CQ3" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units"></div>
                             </div>
@@ -166,7 +167,7 @@
                 </section>
 
                 <section class="tab-panel" data-tab="actuators" role="tabpanel">
-                    <div class="hint">Actuator settings will appear here.</div>
+                    <div class="hint">Pytellite currently assumes the spacecraft has reaction wheels as actuators, whose axes are aligned with the principal axes of the spacecraft. Additional actuator settings will appear here shortly.</div>
                 </section>
 
                 <section class="tab-panel" data-tab="initial" role="tabpanel">
