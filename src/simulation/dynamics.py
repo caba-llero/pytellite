@@ -66,6 +66,28 @@ def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
     return dydt
 
 @njit
+def state_deriv_kalman(y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
+    control_type: int, kp: float, kd: float, qc: np.ndarray) -> np.ndarray:
+
+    w = y[0:3]
+    q = y[3:7]
+    
+    # Ensure matrix dtypes are float64 for stable Numba matmul
+    Jf = J.astype(np.float64)
+    Jif = Ji.astype(np.float64)
+    q = qm.quat_normalize(q)
+
+    L = control_laws(w, q, qc, control_type, kp, kd)
+
+    dqdt = 0.5 * qm.quat_multiply_dot(q, w)
+    dwdt = Jif @ (L - (skew(w) @ Jf) @ w)
+
+    dydt = np.hstack((dwdt, dqdt))
+    return dydt
+
+
+
+@njit
 def control_laws(w: np.ndarray, q: np.ndarray, qc: np.ndarray, control_type: int, kp: float, kd: float):
     if control_type == 0:
         return np.zeros(3)
