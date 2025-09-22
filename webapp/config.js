@@ -10,9 +10,17 @@ async function fetchPresets() {
 
 // Convert YYDDD.DDDD (UTC fractional day-of-year) <-> 'YYYY-MM-DD HH:MM:SS' (UTC)
 function yydoyFractionToDateString(yydoy) {
-    if (yydoy === null || yydoy === undefined || yydoy === '') return '';
+    console.log('yydoyFractionToDateString input:', yydoy, 'type:', typeof yydoy);
+    if (yydoy === null || yydoy === undefined || yydoy === '') {
+        console.log('yydoyFractionToDateString returning empty - null/undefined/empty');
+        return '';
+    }
     const val = parseFloat(yydoy);
-    if (!isFinite(val)) return '';
+    console.log('yydoyFractionToDateString parsed val:', val, 'isFinite:', isFinite(val));
+    if (!isFinite(val)) {
+        console.log('yydoyFractionToDateString returning empty - not finite');
+        return '';
+    }
     const intPart = Math.floor(val);
     const fracPart = val - intPart;
     const yy = Math.floor(intPart / 1000);
@@ -22,6 +30,7 @@ function yydoyFractionToDateString(yydoy) {
     const hours = Math.floor(secondsInDay / 3600);
     const minutes = Math.floor((secondsInDay % 3600) / 60);
     const seconds = secondsInDay % 60;
+    console.log('yydoyFractionToDateString components:', {yy, doy, year, secondsInDay, hours, minutes, seconds});
     // Start of year UTC + (doy-1) days
     const jan1 = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
     const date = new Date(jan1.getTime() + (doy - 1) * 86400000);
@@ -33,7 +42,9 @@ function yydoyFractionToDateString(yydoy) {
     const hh = String(date.getUTCHours()).padStart(2, '0');
     const mm = String(date.getUTCMinutes()).padStart(2, '0');
     const ss = String(date.getUTCSeconds()).padStart(2, '0');
-    return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+    const result = `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+    console.log('yydoyFractionToDateString result:', result);
+    return result;
 }
 
 function dateStringToYyDoyFraction(str) {
@@ -90,7 +101,12 @@ async function init() {
     const [sx, sy, sz] = (saved.spacecraft?.shape) || defaults.spacecraft.shape;
     const [wx, wy, wz] = (saved.initial_conditions?.omega_bi_radps) || defaults.initial_conditions.omega_bi_radps;
     const [qx, qy, qz, qw] = (saved.initial_conditions?.q_bi) || defaults.initial_conditions.q_bi;
-    const orbit = (saved.initial_conditions?.orbit) || defaults.initial_conditions.orbit || {};
+    const defaultsOrbit = defaults.initial_conditions?.orbit || {};
+    const savedOrbit = saved.initial_conditions?.orbit || {};
+    const orbit = { ...defaultsOrbit, ...savedOrbit }; // Merge defaults and saved
+    console.log('Defaults orbit:', defaultsOrbit);
+    console.log('Saved orbit:', savedOrbit);
+    console.log('Merged orbit:', orbit);
     const epoch = orbit.epoch_utc_fractional_yydoy ?? '';
     const kep = orbit.keplerian || {};
     const sma = kep.semi_major_axis_km ?? '';
@@ -129,7 +145,11 @@ async function init() {
     setValue('QY', qy);
     setValue('QZ', qz);
     setValue('QW', qw);
-    setValue('DATEUTC', yydoyFractionToDateString(epoch));
+    console.log('Orbit data:', orbit);
+    console.log('Epoch value:', epoch, 'type:', typeof epoch);
+    const dateStr = yydoyFractionToDateString(epoch);
+    console.log('Converted date:', dateStr);
+    setValue('DATEUTC', dateStr);
     setValue('SMA', sma);
     setValue('ECC', ecc);
     setValue('INC', inc);
@@ -156,6 +176,32 @@ async function init() {
     setValue('CQ2', cq2);
     setValue('CQ3', cq3);
 
+    // Estimation defaults
+    const estimation = saved.estimation || defaults.estimation || {};
+    const enableEstimation = estimation.enable_estimation || false;
+    const estimationCheckbox = document.getElementById('ENABLE_ESTIMATION');
+    if (estimationCheckbox) {
+        estimationCheckbox.checked = enableEstimation;
+    }
+    // Show/hide estimation settings based on checkbox state
+    const estimationSettings = document.getElementById('estimation-settings');
+    if (estimationSettings) {
+        estimationSettings.style.display = enableEstimation ? 'block' : 'none';
+    }
+    // Set default values for estimation parameters
+    setValue('CTRL_FREQ', estimation.ctrl_freq ?? 100.0);
+    setValue('GT_FREQ', estimation.gt_freq ?? 1000.0);
+    setValue('RNG_SEED', estimation.rng_seed ?? 42);
+    setValue('GYRO_MEAS_FREQ', estimation.gyro_meas_freq ?? 100.0);
+    setValue('GYRO_ARW', estimation.gyro_arw ?? 0.0);
+    setValue('GYRO_RRW', estimation.gyro_rrw ?? 0.0);
+    setValue('GYRO_TRUE_BIAS', estimation.gyro_true_bias ?? 0.0);
+    setValue('GYRO_EST_BIAS', estimation.gyro_est_bias ?? 0.0);
+    setValue('GYRO_INIT_COV', estimation.gyro_init_cov ?? 0.0);
+    setValue('STAR_MEAS_FREQ', estimation.star_meas_freq ?? 1.0);
+    setValue('STAR_ISO_ACC', estimation.star_iso_acc ?? 0.0);
+    setValue('STAR_INIT_ACC', estimation.star_init_acc ?? 0.0);
+
     // Tabs behavior
     const tabs = document.querySelectorAll('.tab');
     const panels = document.querySelectorAll('.tab-panel');
@@ -172,6 +218,7 @@ async function init() {
     });
 
     document.getElementById('startBtn').addEventListener('click', () => {
+        const enableEstimation = document.getElementById('ENABLE_ESTIMATION')?.checked || false;
         const params = {
             j1: readNumber('J1'), j2: readNumber('J2'), j3: readNumber('J3'),
             sx: readNumber('SX'), sy: readNumber('SY'), sz: readNumber('SZ'),
@@ -184,7 +231,23 @@ async function init() {
             kp: readNumber('KP'), kd: readNumber('KD'),
             cq0: readNumber('CQ0'), cq1: readNumber('CQ1'), cq2: readNumber('CQ2'), cq3: readNumber('CQ3'),
             // epoch string, passed to loading page which forwards to backend
-            epoch: (document.getElementById('DATEUTC')?.value || '').trim()
+            epoch: (document.getElementById('DATEUTC')?.value || '').trim(),
+            // estimation params (only include if enabled)
+            ...(enableEstimation && {
+                enable_estimation: true,
+                ctrl_freq: readNumber('CTRL_FREQ'),
+                gt_freq: readNumber('GT_FREQ'),
+                rng_seed: readNumber('RNG_SEED'),
+                gyro_meas_freq: readNumber('GYRO_MEAS_FREQ'),
+                gyro_arw: readNumber('GYRO_ARW'),
+                gyro_rrw: readNumber('GYRO_RRW'),
+                gyro_true_bias: readNumber('GYRO_TRUE_BIAS'),
+                gyro_est_bias: readNumber('GYRO_EST_BIAS'),
+                gyro_init_cov: readNumber('GYRO_INIT_COV'),
+                star_meas_freq: readNumber('STAR_MEAS_FREQ'),
+                star_iso_acc: readNumber('STAR_ISO_ACC'),
+                star_init_acc: readNumber('STAR_INIT_ACC')
+            })
         };
         // persist selections
         const persisted = {
@@ -209,6 +272,21 @@ async function init() {
                 control_type: (params.ctrl === 'inertial_linear' ? 'tracking' : (params.ctrl === 'inertial_nonlinear' ? 'nonlinear_tracking' : 'zero_torque')),
                 kp: params.kp, kd: params.kd,
                 qc: [params.cq0, params.cq1, params.cq2, params.cq3]
+            },
+            estimation: {
+                enable_estimation: params.enable_estimation || false,
+                ctrl_freq: params.ctrl_freq,
+                gt_freq: params.gt_freq,
+                rng_seed: params.rng_seed,
+                gyro_meas_freq: params.gyro_meas_freq,
+                gyro_arw: params.gyro_arw,
+                gyro_rrw: params.gyro_rrw,
+                gyro_true_bias: params.gyro_true_bias,
+                gyro_est_bias: params.gyro_est_bias,
+                gyro_init_cov: params.gyro_init_cov,
+                star_meas_freq: params.star_meas_freq,
+                star_iso_acc: params.star_iso_acc,
+                star_init_acc: params.star_init_acc
             }
         };
         localStorage.setItem('sim_config', JSON.stringify(persisted));
@@ -226,6 +304,20 @@ async function init() {
         });
     }
 
+    // Show/hide estimation settings on checkbox change
+    const estimationCheckbox2 = document.getElementById('ENABLE_ESTIMATION');
+    if (estimationCheckbox2) {
+        estimationCheckbox2.addEventListener('change', () => {
+            const estimationSettings = document.getElementById('estimation-settings');
+            if (estimationSettings) {
+                estimationSettings.style.display = estimationCheckbox2.checked ? 'block' : 'none';
+            }
+        });
+
+        // Trigger initial state
+        estimationCheckbox2.dispatchEvent(new Event('change'));
+    }
+
     // Populate presets dropdown
     const presetSelect = document.getElementById('PRESET_SELECT');
     const presets = (presetsPayload && presetsPayload.presets) || [];
@@ -239,7 +331,9 @@ async function init() {
         for (const p of presets) {
             const opt = document.createElement('option');
             opt.value = p.file;
-            opt.textContent = p.name || p.file;
+            // Use the name from YAML, or create a readable name from the filename
+            const displayName = p.name || p.file.replace(/^config_/, '').replace(/\.yaml$/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            opt.textContent = displayName;
             presetSelect.appendChild(opt);
         }
         const loadBtn = document.getElementById('PRESET_LOAD_BTN');

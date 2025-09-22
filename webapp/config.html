@@ -20,7 +20,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         body { background: #0b0b0b; overflow: auto; }
-        .config-container { max-width: 960px; margin: 0 auto; padding: 24px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
+        .config-container { max-width: 960px; margin: 0 auto; padding: 24px; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; min-width: 0; width: 100%; box-sizing: border-box; }
         .config-card { background: #101214; border: 1px solid #1f242b; border-radius: 12px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
         .config-header { position: sticky; top: 0; background: #0b0b0b; padding: 10px 0 16px 0; z-index: 20; display: flex; align-items: center; gap: 12px; }
         .start-btn { background: linear-gradient(135deg, #006896, #0091c7); color: white; border: none; padding: 10px 16px; cursor: pointer; border-radius: 8px; font-weight: 600; letter-spacing: 0.2px; margin-left: auto; }
@@ -31,19 +31,22 @@
         .tab:hover { color: #e6eefc; }
         .tab.active { color: #ffffff; border-bottom-color: #006896; background: #12161b; }
         .panels { padding-top: 8px; }
-        .tab-panel { display: none; }
+        .tab-panel { display: none; min-width: 0; }
         .tab-panel.active { display: block; }
 
         .config-logo { height: 75px; }
 
-        .section { margin-top: 16px; }
+        .section { margin-top: 16px; min-width: 0; }
         .section h3 { margin: 0 0 10px 0; color: #d5dbe6; font-weight: 600; }
 
         .field-group { background: #0f1318; border: 1px solid #1d2229; border-radius: 10px; padding: 12px; }
         .group-spacer { height: 16px; }
 
         /* Two-column grid: labels on left, inputs on right */
-        .li-grid { display: grid; grid-template-columns: 220px minmax(220px, 360px) 1fr; gap: 10px 16px; align-items: center; }
+        .li-grid { display: grid; grid-template-columns: minmax(180px, 220px) minmax(220px, 360px) 1fr; gap: 10px 16px; align-items: center; min-width: 0; }
+        .field-group .li-grid { margin-bottom: 8px; }
+        .field-group .li-grid:last-child { margin-bottom: 0; }
+        .field-group { min-width: 0; }
         .li-grid label { color: #9aa4b2; font-size: 14px; justify-self: start; }
         .text-input { width: 100%; max-width: 340px; padding: 10px 12px; background: #0c0f13; color: #e6eefc; border: 1px solid #26303a; border-radius: 8px; outline: none; font-size: 14px; }
         .text-input:focus { border-color: #006896; box-shadow: 0 0 0 3px rgba(0,104,150,0.25); }
@@ -66,18 +69,29 @@
 
         <div class="config-card">
             <div class="tabs" role="tablist">
-                <button class="tab active" data-tab="shape" role="tab" aria-selected="true">Shape & Inertia</button>
+                <button class="tab active" data-tab="presets" role="tab" aria-selected="true">Presets</button>
+                <button class="tab" data-tab="shape" role="tab" aria-selected="false">Shape & Inertia</button>
                 <button class="tab" data-tab="control" role="tab" aria-selected="false">Control</button>
-                <button class="tab" data-tab="actuators" role="tab" aria-selected="false">Actuators</button>
-                <button class="tab" data-tab="initial" role="tab" aria-selected="false">Initial attitude</button>
-                <button class="tab" data-tab="orbit" role="tab" aria-selected="false">Initial orbit</button>
-                <button class="tab" data-tab="gui" role="tab" aria-selected="false">GUI</button>
-                <button class="tab" data-tab="integration" role="tab" aria-selected="false">Integration</button>
-                <button class="tab" data-tab="presets" role="tab" aria-selected="false">Presets</button>
+                <button class="tab" data-tab="estimation" role="tab" aria-selected="false">Estimation</button>
+                <button class="tab" data-tab="initial" role="tab" aria-selected="false">Initial conditions</button>
+                <button class="tab" data-tab="other" role="tab" aria-selected="false">Other</button>
             </div>
 
             <div class="panels">
-                <section class="tab-panel active" data-tab="shape" role="tabpanel">
+                <section class="tab-panel active" data-tab="presets" role="tabpanel">
+                    <div class="section">
+                        <h3>Configuration Presets</h3>
+                        <div class="field-group">
+                            <div class="li-grid">
+                                <label for="PRESET_SELECT">Preset</label>
+                                <select id="PRESET_SELECT" class="text-input"></select>
+                                <button id="PRESET_LOAD_BTN" class="start-btn" type="button" style="margin-left: 8px;">Load</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="tab-panel" data-tab="shape" role="tabpanel">
                     <div class="section">
                         <h3>Spacecraft inertia (principal axes)</h3>
                         <div class="field-group">
@@ -94,6 +108,8 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="group-spacer"></div>
 
                     <div class="section">
                         <h3>Spacecraft dimensions</h3>
@@ -146,28 +162,106 @@
 
                         <div class="group-spacer"></div>
 
-                        <div class="field-group">
+                        <div class="section">
                             <h3>Target inertial attitude quaternion</h3>
-                            <div class="li-grid">
-                                <label for="CQ0">q<sub>x</sub></label>
-                                <input id="CQ0" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units"></div>
-                                <label for="CQ1">q<sub>y</sub></label>
-                                <input id="CQ1" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units"></div>
-                                <label for="CQ2">q<sub>z</sub></label>
-                                <input id="CQ2" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units"></div>
-                                <label for="CQ3">q<sub>w</sub></label>
-                                <input id="CQ3" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units"></div>
+                            <div class="field-group">
+                                <div class="li-grid">
+                                    <label for="CQ0">q<sub>x</sub></label>
+                                    <input id="CQ0" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units"></div>
+                                    <label for="CQ1">q<sub>y</sub></label>
+                                    <input id="CQ1" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units"></div>
+                                    <label for="CQ2">q<sub>z</sub></label>
+                                    <input id="CQ2" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units"></div>
+                                    <label for="CQ3">q<sub>w</sub></label>
+                                    <input id="CQ3" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </section>
 
-                <section class="tab-panel" data-tab="actuators" role="tabpanel">
-                    <div class="hint">Pytellite currently assumes the spacecraft has reaction wheels as actuators, whose axes are aligned with the principal axes of the spacecraft. Additional actuator settings will appear here shortly.</div>
+                <section class="tab-panel" data-tab="estimation" role="tabpanel">
+                    <!-- Enable checkbox at the top -->
+                    <div class="field-group" style="background: #0f1318; border: 1px solid #1d2229; border-radius: 10px; padding: 12px; margin-bottom: 16px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <input type="checkbox" id="ENABLE_ESTIMATION" style="width: 16px; height: 16px; accent-color: #006896;">
+                            <label for="ENABLE_ESTIMATION" style="color: #d5dbe6; margin: 0; cursor: pointer; font-size: 14px;">Enable attitude estimation</label>
+                        </div>
+                    </div>
+
+                    <!-- Estimation settings (hidden by default) -->
+                    <div id="estimation-settings" style="display: none;">
+                        <!-- General settings -->
+                        <div class="section">
+                            <h3>General settings</h3>
+                            <div class="field-group">
+                                <div class="li-grid">
+                                    <label for="CTRL_FREQ">Control law update frequency</label>
+                                    <input id="CTRL_FREQ" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">Hz</div>
+                                    <label for="GT_FREQ">Ground truth propagation frequency</label>
+                                    <input id="GT_FREQ" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">Hz</div>
+                                    <label for="RNG_SEED">RNG seed</label>
+                                    <input id="RNG_SEED" class="text-input" type="text" inputmode="numeric" autocomplete="off">
+                                    <div class="units"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="group-spacer"></div>
+
+                        <!-- Gyroscopes section -->
+                        <div class="section">
+                            <h3>Gyroscopes</h3>
+                            <div class="field-group">
+                                <div class="li-grid">
+                                    <label for="GYRO_MEAS_FREQ">Measurement frequency</label>
+                                    <input id="GYRO_MEAS_FREQ" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">Hz</div>
+                                    <label for="GYRO_ARW">ARW coefficient</label>
+                                    <input id="GYRO_ARW" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">rad/s<sup>1/2</sup></div>
+                                    <label for="GYRO_RRW">RRW coefficient</label>
+                                    <input id="GYRO_RRW" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">rad/s<sup>3/2</sup></div>
+                                    <label for="GYRO_TRUE_BIAS">True initial bias</label>
+                                    <input id="GYRO_TRUE_BIAS" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">rad/s</div>
+                                    <label for="GYRO_EST_BIAS">Estimated initial bias</label>
+                                    <input id="GYRO_EST_BIAS" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">rad/s</div>
+                                    <label for="GYRO_INIT_COV">Initial covariance</label>
+                                    <input id="GYRO_INIT_COV" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">rad<sup>2</sup>/s<sup>2</sup></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="group-spacer"></div>
+
+                        <!-- Startracker/attitude sensor section -->
+                        <div class="section">
+                            <h3>Startracker/attitude sensor</h3>
+                            <div class="field-group">
+                                <div class="li-grid">
+                                    <label for="STAR_MEAS_FREQ">Measurement frequency</label>
+                                    <input id="STAR_MEAS_FREQ" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">Hz</div>
+                                    <label for="STAR_ISO_ACC">Isotropic measurement accuracy</label>
+                                    <input id="STAR_ISO_ACC" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">rad</div>
+                                    <label for="STAR_INIT_ACC">Isotropic accuracy of initial measurement</label>
+                                    <input id="STAR_INIT_ACC" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">rad</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 <section class="tab-panel" data-tab="initial" role="tabpanel">
@@ -211,10 +305,11 @@
                             </div>
                         </div>
                     </div>
-                </section>
 
-                <section class="tab-panel" data-tab="orbit" role="tabpanel">
+                    <div class="group-spacer"></div>
+
                     <div class="section">
+                        <h3>Date</h3>
                         <div class="field-group">
                             <div class="li-grid">
                                 <label for="DATEUTC">Date (UTC)</label>
@@ -253,7 +348,7 @@
                     </div>
                 </section>
 
-                <section class="tab-panel" data-tab="gui" role="tabpanel">
+                <section class="tab-panel" data-tab="other" role="tabpanel">
                     <div class="section">
                         <h3>Playback</h3>
                         <div class="field-group">
@@ -261,15 +356,12 @@
                                 <label for="PLAY">Playback speed</label>
                                 <input id="PLAY" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">×</div>
-                                <label for="SR">Sample rate</label>
-                                <input id="SR" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units">Hz</div>
                             </div>
                         </div>
                     </div>
-                </section>
 
-                <section class="tab-panel" data-tab="integration" role="tabpanel">
+                    <div class="group-spacer"></div>
+
                     <div class="section">
                         <h3>Integration</h3>
                         <div class="field-group">
@@ -277,6 +369,9 @@
                                 <label for="TMAX">Integration time</label>
                                 <input id="TMAX" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">s</div>
+                                <label for="SR">Sample rate</label>
+                                <input id="SR" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units">Hz</div>
                                 <label for="RTOL">Relative tolerance</label>
                                 <input id="RTOL" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">unitless</div>
@@ -288,18 +383,8 @@
                     </div>
                 </section>
 
-                <section class="tab-panel" data-tab="presets" role="tabpanel">
-                    <div class="section">
-                        <h3>Configuration Presets</h3>
-                        <div class="field-group">
-                            <div class="li-grid">
-                                <label for="PRESET_SELECT">Preset</label>
-                                <select id="PRESET_SELECT" class="text-input"></select>
-                                <button id="PRESET_LOAD_BTN" class="start-btn" type="button" style="margin-left: 8px;">Load</button>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+
+
             </div>
         </div>
     </div>

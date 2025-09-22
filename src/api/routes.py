@@ -113,6 +113,8 @@ def _load_defaults() -> dict:
 @router.get("/api/defaults")
 async def api_defaults():
     cfg = _load_defaults()
+    print("Loaded config:", cfg)  # Debug log
+    print("Initial conditions:", cfg.get("initial_conditions", {}))  # Debug log
     return {
         "spacecraft": {
             "inertia": cfg["spacecraft"]["inertia"],
