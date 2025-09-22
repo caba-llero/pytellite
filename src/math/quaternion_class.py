@@ -2,6 +2,12 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R 
 from scipy.spatial.transform import Slerp 
 
+'''
+DEPRECATED (slow calculation times)
+
+'''
+
+
 class Quaternion:
     """A quaternion class for attitude representation and operations.
 
