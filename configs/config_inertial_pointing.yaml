@@ -1,4 +1,4 @@
-name: Inertial pointing, linear law (example 7.1 from Markley)
+name: Inertial pointing with linear control - Markley 7.1
 simulation:
   dt_sim: 0.1
   time_scale: 100.0

@@ -328,6 +328,7 @@ async function init() {
         ph.value = '';
         ph.textContent = 'Select a preset…';
         presetSelect.appendChild(ph);
+        let inertialPointingOption = null;
         for (const p of presets) {
             const opt = document.createElement('option');
             opt.value = p.file;
@@ -335,6 +336,14 @@ async function init() {
             const displayName = p.name || p.file.replace(/^config_/, '').replace(/\.yaml$/, '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             opt.textContent = displayName;
             presetSelect.appendChild(opt);
+            // Remember the inertial pointing preset option
+            if (p.file === 'config_inertial_pointing.yaml') {
+                inertialPointingOption = opt;
+            }
+        }
+        // Select inertial pointing preset by default
+        if (inertialPointingOption) {
+            presetSelect.value = inertialPointingOption.value;
         }
         const loadBtn = document.getElementById('PRESET_LOAD_BTN');
         const onLoadPreset = async () => {

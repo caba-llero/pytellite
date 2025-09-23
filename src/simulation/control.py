@@ -1,6 +1,23 @@
 import numpy as np
 from numba import njit
 from ..math import quaternion as qm
+import os
+from ..math import quaternion as qm
+
+# Use the same conditional Numba import pattern as other modules so that
+# setting DISABLE_NUMBA=1 (used locally to speed up dev) disables JIT here too.
+def _identity_decorator(func=None, **kwargs):
+    if func is None:
+        return lambda f: f
+    return func
+if os.getenv("DISABLE_NUMBA", "0") == "1":
+    njit = _identity_decorator  # type: ignore[assignment]
+else:
+    try:
+        from numba import njit  # type: ignore
+    except Exception:
+        njit = _identity_decorator  # type: ignore[assignment]
+
 
 @njit
 def control_laws(w: np.ndarray, q: np.ndarray, qc: np.ndarray, control_type: int, kp: float, kd: float):

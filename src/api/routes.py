@@ -89,13 +89,13 @@ async def healthz():
 
 
 def _load_defaults() -> dict:
-    # Prefer Markley preset as default; fall back to intermediate axis preset, then legacy
+    # Prefer inertial pointing preset as default; fall back to intermediate axis preset, then legacy
     cfg_dir = os.path.join(os.path.dirname(__file__), "..", "..", "configs")
-    root_markley = os.path.join(cfg_dir, "config_markley_7_1.yaml")
+    root_inertial = os.path.join(cfg_dir, "config_inertial_pointing.yaml")
     root_intermediate = os.path.join(cfg_dir, "config_intermediateaxis.yaml")
     
-    if os.path.exists(root_markley):
-        config_path = root_markley
+    if os.path.exists(root_inertial):
+        config_path = root_inertial
     elif os.path.exists(root_intermediate):
         config_path = root_intermediate
     else:
