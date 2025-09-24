@@ -183,10 +183,14 @@ async function init() {
     if (estimationCheckbox) {
         estimationCheckbox.checked = enableEstimation;
     }
-    // Show/hide estimation settings based on checkbox state
+    // Show/hide estimation settings and MEKF info based on checkbox state
     const estimationSettings = document.getElementById('estimation-settings');
+    const mekfInfo = document.getElementById('mekf-info');
     if (estimationSettings) {
         estimationSettings.style.display = enableEstimation ? 'block' : 'none';
+    }
+    if (mekfInfo) {
+        mekfInfo.style.display = enableEstimation ? 'block' : 'none';
     }
     // Set default values for estimation parameters
     setValue('CTRL_FREQ', estimation.ctrl_freq ?? 100.0);
@@ -309,8 +313,12 @@ async function init() {
     if (estimationCheckbox2) {
         estimationCheckbox2.addEventListener('change', () => {
             const estimationSettings = document.getElementById('estimation-settings');
+            const mekfInfo = document.getElementById('mekf-info');
             if (estimationSettings) {
                 estimationSettings.style.display = estimationCheckbox2.checked ? 'block' : 'none';
+            }
+            if (mekfInfo) {
+                mekfInfo.style.display = estimationCheckbox2.checked ? 'block' : 'none';
             }
         });
 
