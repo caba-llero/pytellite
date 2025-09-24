@@ -2,6 +2,8 @@
 
 Pytellite is an open-source spacecraft attitude simulator. It allows to easily test control laws and visualize the satellite motion through a web app. Please note that as of September 2025, the app is in early stages of development. For more information, please visit https://caba.lle.ro/portfolio. 
 
+The as of 9/23/2025, the attitude estimation feature is disabled, and will be live once I carry out more tests. You can find the error state multiplicative extended Kalman filter used to simulate the attitude estimation as a standalone project here: https://github.com/caba-llero/Error-state-MEKF
+
 ## Testing Pytellite online
 Visit https://www.pytellite.org
 
