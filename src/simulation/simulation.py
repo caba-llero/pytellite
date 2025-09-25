@@ -9,8 +9,10 @@ import yaml
 from typing import Optional, Dict, Any
 
 from ..math import quaternion as qm
-from .dynamics import state_deriv
+from .dynamics import state_deriv, state_deriv_kalman
 from ..math.quaternion import slerp_quat_array
+from ..math.integration import rk45_step_autonomous as int_step
+import kalman as k
 
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
@@ -105,6 +107,172 @@ class Plant:
         sol = solve_ivp(state_deriv, t_span, y0, args=args, rtol=rtol, atol=atol)
         return sol.t, sol.y
 
+    def compute_states_kalman(self, t_max: float, dt_t: float, dt_m: float, dt_g: float, dt_c: float,
+        rtol: float = 1e-12, atol: float = 1e-12, 
+        control_type: Optional[object] = None, kp: Optional[float] = None, 
+        kd: Optional[float] = None, qc: Optional[np.ndarray] = None) -> np.ndarray:
+        """
+        Compute the states of the plant over a given time range using the MEKF (estimation option on)
+        """
+
+        I3 = np.eye(3)
+        O3 = np.zeros((3,3))
+        arcsec_to_rad = self.arcsec_to_rad
+
+        # Measurement model matrices
+        H = np.hstack((I3, O3))
+        R = I3 * (self.sigma_startracker * arcsec_to_rad) ** 2
+
+        # Truth time grid and measurement & control update indices
+        times = np.arange(0, self.t_max, self.dt)
+        idx_gyro = k.measurement_indices(self.t_max, self.dt, self.freq_gyro)
+        idx_star = k.measurement_indices(self.t_max, self.dt, self.freq_startracker)
+        idx_ctrl = k.measurement_indices(self.t_max, self.dt, self.freq_control)
+        idx_all = idx_gyro | idx_star | idx_ctrl
+        timesteps = len(idx_all)
+
+        n = 3 
+        np.random.seed(self.rng_seed) # set RNG seed
+
+        # Initial attitude estimate from a noisy measurement
+        Z_n = np.random.normal(
+            0, self.sigma_startracker * arcsec_to_rad * self.init_inaccuracy, n
+        ).reshape(-1, 1) 
+        q_m_0 = self.q_t_0.reshape(-1, 1) + 0.5 * k.Xi(self.q_t_0) @ Z_n
+        q_m_0 = q_m_0.flatten() / np.linalg.norm(q_m_0)
+        q_h_0 = q_m_0
+
+        ## Allocate logs ____________________________________________________________________________________
+        # Estimates
+        q_h_l = np.empty((4, timesteps)) # attitude
+        w_h_l = np.empty((3, timesteps)) # angular velocity
+        B_h_l = np.empty((3, timesteps)) # gyro bias
+        
+        # Ground truth
+        B_t_l = np.empty((3, timesteps))
+        w_t_l = np.empty((3, timesteps))
+        q_t_l = np.empty((4, timesteps))
+
+        # Control & other
+        h_l = np.empty((3, timesteps)) # angular velocity of wheels
+        L_l = np.empty((3, timesteps)) # control torque
+        t_l = np.empty(timesteps) # time
+        G_l = np.empty(timesteps) # scalar pointing error
+        Z_d_l = np.empty((3, timesteps)) # pointing error vector components
+        s_l = np.empty((6, timesteps)) # standard deviation of attitude error vector and bias error, both 3 components each
+
+        ## Copy initial states to current value ____________________________________________________________________________________
+        q_t = self.q_t_0.copy()
+        B_t = self.B_t_0.copy()
+        B_h = self.B_h_0.copy()
+        w_t = self.w_t_0.copy()
+        q_h = q_h_0.copy()
+        q_d = k.quat_mul(q_t, u.quat_inv(q_h))
+        Z_d = k.quat_to_rotvec(q_d)
+        L = np.zeros(3) # zero initial control torque
+        h = np.zeros(3) # zero initial wheel angular momentum
+        G = np.linalg.norm(Z_d)
+        P = np.block([[self.Pq, O3], [O3, self.Pb]])
+
+        # Initial log at t=0
+        if 0 in idx_all and k < timesteps:
+            s = np.sqrt(np.diag(P))
+            s_l[:, 0] = s
+            t_l[0] = times[0]
+            q_h_l[:, 0] = q_h
+            q_t_l[:, 0] = q_t
+            Z_d_l[:, 0] = Z_d
+            B_h_l[:, 0] = B_h.flatten()
+            B_t_l[:, 0] = B_t
+            h_l[:,0] = h
+            G_l[:,0] = G
+            L_l[:,0] = L
+
+        # Calculate for the rest of the timesteps
+        k = 1 # k=0 is the initial "measurement" time, which was assigned above
+        for i in range(1, len(times)):
+            # Propagate ground truth
+            y = np.concatenate(w_t, h)
+            w_t = int_step(state_deriv_kalman, y, dt_t, J, Ji, control_type, kp, kd, qc, q_t)
+            q_t = k.quat_propagate(q_t, w_t, self.dt_t)
+            B_t = B_t + np.random.normal(0, self.sigma_u * self.dt_t**0.5, n)
+
+            # Prediction on gyro event
+            if i in idx_gyro:
+                dt_g = times[i] - times[last_gyro_i]
+                if dt_g <= 0:
+                    dt_g = self.dt
+                w_t_meas = w_t_l[:, i] if i < w_t_l.shape[1] else w_t_l[:, -1]
+                w_m = w_t_meas + B_t + np.random.standard_normal(n) * (
+                    self.sigma_v / np.sqrt(dt_g)
+                )
+                w_h = w_m - B_h
+                Phi = u.Phi(dt_g, w_h, I3, self.simple_Phi)
+                Qk = u.Q(self.sigma_v, self.sigma_u, dt_g, I3)
+                P = u.P_prop(P, Phi, Qk)
+                q_h = u.quat_propagate(q_h, w_h, dt_g)
+                last_gyro_i = i
+
+            # Update on star tracker event
+            if i in idx_star:
+                dZ_m = u.startracker_meas(
+                    q_t, q_h, self.sigma_startracker * arcsec_to_rad, n
+                )
+                K, K_Z, K_B = u.K(P, H, R)
+                P = u.P_meas(K, H, P, R, self.Joseph)
+                dB_h = K_B @ dZ_m
+                dZ_h = K_Z @ dZ_m
+                B_h = B_h + dB_h
+
+                theta = np.linalg.norm(dZ_h)
+                if theta > 0:
+                    axis = dZ_h / theta
+                    dq_err = np.hstack((axis * np.sin(0.5 * theta), np.cos(0.5 * theta)))
+                else:
+                    dq_err = np.array([0.0, 0.0, 0.0, 1.0])
+                q_h = u.quat_mul(dq_err, q_h)
+                q_h = q_h / np.linalg.norm(q_h)
+                q_d = u.quat_mul(q_t, u.quat_inv(q_h))
+                Z_d = u.quat_to_rotvec(q_d)
+                G = np.linalg.norm(Z_d)
+
+            # Update control law
+            if i in idx_ctrl:
+                pass
+
+
+            # Log at measurement events
+            if i in idx_all and k < timesteps:
+                s = np.sqrt(np.diag(P))
+                s_l[:, k] = s
+                t_l[k] = times[i]
+                G_l[k] = G
+                q_h_l[:, k] = q_h
+                q_t_l[:, k] = q_t
+                Z_d_l[:, k] = Z_d
+                B_h_l[:, k] = B_h.flatten()
+                B_t_l[:, k] = B_t
+                k += 1
+
+        B_d = B_t_l - B_h_l
+
+        self.results = {
+            "t": t_l,
+            "G": G_l,
+            "q_h": q_h_l,
+            "q_t": q_t_l,
+            "Z_d": Z_d_l,
+            "B_h": B_h_l,
+            "B_t": B_t_l,
+            "B_d": B_d,
+            "s": s_l,
+        }
+
+
+
+
+        
+
     def evaluate_gui(self, t, y, playback_speed: float = 1.0, sample_rate: float = 30) -> np.ndarray:
         """
         Takes the computed states and returns the states at the sample rate.
@@ -125,7 +293,8 @@ class Plant:
         return t_sampled, r_sampled, v_sampled, euler_sampled, w_sampled, q_sampled, h_sampled
 
 
-### DEPRECATED
+
+### DEPRECATED ___________________________________________________________________________________________________________________
 
     def update(self) -> np.ndarray:
         """

@@ -67,23 +67,28 @@ def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
 
 @njit
 def state_deriv_kalman(y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
-    control_type: int, kp: float, kd: float, qc: np.ndarray) -> np.ndarray:
+    control_type: int, kp: float, kd: float, qc: np.ndarray, q: np.ndarray) -> np.ndarray:
+    '''
+    Provisional function that returns the derivative of all states except for quaternion
+    Used to integrate numerically (i.e. with RK45)
+    Quaternions are integrated apart to preserve the norm
+    '''
 
     w = y[0:3]
-    q = y[3:7]
-    
-    # Ensure matrix dtypes are float64 for stable Numba matmul
+    h = y[3:6]
+
     Jf = J.astype(np.float64)
     Jif = Ji.astype(np.float64)
-    q = qm.quat_normalize(q)
 
     L = control_laws(w, q, qc, control_type, kp, kd)
 
-    dqdt = 0.5 * qm.quat_multiply_dot(q, w)
     dwdt = Jif @ (L - (skew(w) @ Jf) @ w)
+    dhdt = -skew(w) @ h - L
 
-    dydt = np.hstack((dwdt, dqdt))
+    dydt = np.hstack((dwdt, dhdt))
+
     return dydt
+    
 
 
 
