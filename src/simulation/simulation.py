@@ -13,6 +13,7 @@ from .dynamics import state_deriv, state_deriv_kalman
 from ..math.quaternion import slerp_quat_array
 from ..math.integration import rk45_step_autonomous as int_step
 import kalman as k
+from .control import control_laws
 
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
@@ -135,9 +136,7 @@ class Plant:
         np.random.seed(self.rng_seed) # set RNG seed
 
         # Initial attitude estimate from a noisy measurement
-        Z_n = np.random.normal(
-            0, self.sigma_startracker * arcsec_to_rad * self.init_inaccuracy, n
-        ).reshape(-1, 1) 
+        Z_n = np.random.normal(0, self.sigma_startracker * arcsec_to_rad * self.init_inaccuracy, n).reshape(-1, 1) 
         q_m_0 = self.q_t_0.reshape(-1, 1) + 0.5 * k.Xi(self.q_t_0) @ Z_n
         q_m_0 = q_m_0.flatten() / np.linalg.norm(q_m_0)
         q_h_0 = q_m_0
@@ -193,55 +192,49 @@ class Plant:
         for i in range(1, len(times)):
             # Propagate ground truth
             y = np.concatenate(w_t, h)
-            w_t = int_step(state_deriv_kalman, y, dt_t, J, Ji, control_type, kp, kd, qc, q_t)
+            w_t = int_step(state_deriv_kalman, y, dt_t, J, Ji, L, kp, kd, qc, q_t)
             q_t = k.quat_propagate(q_t, w_t, self.dt_t)
             B_t = B_t + np.random.normal(0, self.sigma_u * self.dt_t**0.5, n)
 
             # Prediction on gyro event
             if i in idx_gyro:
-                dt_g = times[i] - times[last_gyro_i]
-                if dt_g <= 0:
-                    dt_g = self.dt
-                w_t_meas = w_t_l[:, i] if i < w_t_l.shape[1] else w_t_l[:, -1]
-                w_m = w_t_meas + B_t + np.random.standard_normal(n) * (
-                    self.sigma_v / np.sqrt(dt_g)
-                )
-                w_h = w_m - B_h
-                Phi = u.Phi(dt_g, w_h, I3, self.simple_Phi)
-                Qk = u.Q(self.sigma_v, self.sigma_u, dt_g, I3)
-                P = u.P_prop(P, Phi, Qk)
-                q_h = u.quat_propagate(q_h, w_h, dt_g)
-                last_gyro_i = i
+                w_m = w_t + B_t + np.random.standard_normal(n) * (self.sigma_v / np.sqrt(dt_g)) #  angular velocity true measurement
+                w_h = w_m - B_h # angular velocity estimate update
+                Phi = k.Phi(dt_g, w_h, I3, self.simple_Phi) # calculate transition matrix
+                Qk = k.Q(self.sigma_v, self.sigma_u, dt_g, I3) #
+                P = k.P_prop(P, Phi, Qk) # udpate covariance matrix
+                q_h = k.quat_propagate(q_h, w_h, dt_g) # propagate estimate of the attitude 
 
             # Update on star tracker event
             if i in idx_star:
-                dZ_m = u.startracker_meas(
-                    q_t, q_h, self.sigma_startracker * arcsec_to_rad, n
-                )
-                K, K_Z, K_B = u.K(P, H, R)
-                P = u.P_meas(K, H, P, R, self.Joseph)
-                dB_h = K_B @ dZ_m
-                dZ_h = K_Z @ dZ_m
-                B_h = B_h + dB_h
+                dZ_m = k.startracker_meas(q_t, q_h, self.sigma_startracker * arcsec_to_rad, n) # synthesize error vector with startracker accuracy
+                K, K_Z, K_B = k.K(P, H, R) # compute kalman gain
+                P = k.P_meas(K, H, P, R, self.Joseph) # update the covariance matrix
+                dB_h = K_B @ dZ_m # calculate estimate of error in bias
+                dZ_h = K_Z @ dZ_m # calculate estimate of error vector 
+                B_h = B_h + dB_h # inject error in bias into global bias estimate
 
+                # Inject error vector estimate into global quaternion estimate
                 theta = np.linalg.norm(dZ_h)
                 if theta > 0:
                     axis = dZ_h / theta
                     dq_err = np.hstack((axis * np.sin(0.5 * theta), np.cos(0.5 * theta)))
                 else:
                     dq_err = np.array([0.0, 0.0, 0.0, 1.0])
-                q_h = u.quat_mul(dq_err, q_h)
+                q_h = k.quat_mul(dq_err, q_h)
                 q_h = q_h / np.linalg.norm(q_h)
-                q_d = u.quat_mul(q_t, u.quat_inv(q_h))
-                Z_d = u.quat_to_rotvec(q_d)
-                G = np.linalg.norm(Z_d)
+
+                # Calculate true errors in attitude
+                q_d = k.quat_mul(q_t, k.quat_inv(q_h))
+                Z_d = k.quat_to_rotvec(q_d)
+                G = np.linalg.norm(Z_d) # obtain the pointing error
 
             # Update control law
             if i in idx_ctrl:
-                pass
+                L = control_laws(w_h, q_h, qc, control_type, kp, kd)
+                # to add: max torque, min torque, don't update if within the error of the wheels, etc
 
-
-            # Log at measurement events
+            # Log at measurement events / control law updates
             if i in idx_all and k < timesteps:
                 s = np.sqrt(np.diag(P))
                 s_l[:, k] = s
