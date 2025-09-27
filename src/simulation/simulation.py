@@ -241,6 +241,7 @@ class Plant:
         w_t = self.w_t_0.copy()
         q_h = q_h_0.copy()
         w_h = self.w_t_0.copy()
+        w_drive = w_h.copy()
         q_d = k.quat_mul(q_t, qm.quat_inv(q_h))
         Z_d = k.quat_to_rotvec(q_d)
         L = np.zeros(3)
@@ -258,19 +259,22 @@ class Plant:
                 q_t = k.quat_propagate(q_t, w_t, self.dt_truth)
                 B_t = B_t + np.random.normal(0, self.sigma_u * self.dt_truth ** 0.5, n)
 
-            if i > 0 and i in idx_gyro:
-                dt_g = times[i] - times[last_gyro_i]
+            if i > 0:
+                q_h = k.quat_propagate(q_h, w_drive, self.dt_truth)
+                Phi = k.Phi(self.dt_truth, w_drive, I3, self.simple_Phi)
+                Qk = k.Q(self.sigma_v, self.sigma_u, self.dt_truth, I3)
+                P = k.P_prop(P, Phi, Qk)
+
+            if i in idx_gyro:
+                dt_g = times[i] - times[last_gyro_i] if i > 0 else self.dt_truth
                 if dt_g <= 0:
                     dt_g = self.dt_truth
                 w_m = w_t + B_t + np.random.standard_normal(n) * (self.sigma_v / np.sqrt(dt_g))
-                w_h = w_m - B_h
-                Phi = k.Phi(dt_g, w_h, I3, self.simple_Phi)
-                Qk = k.Q(self.sigma_v, self.sigma_u, dt_g, I3)
-                P = k.P_prop(P, Phi, Qk)
-                q_h = k.quat_propagate(q_h, w_h, dt_g)
+                w_drive = w_m - B_h
+                w_h = w_drive.copy()
                 last_gyro_i = i
 
-            if i > 0 and i in idx_star:
+            if i in idx_star and i > 0:
                 dZ_m = k.startracker_meas(q_t, q_h, self.sigma_startracker * ARCSEC_TO_RAD, n)
                 K, K_Z, K_B = k.K(P, H, R)
                 P = k.P_meas(K, H, P, R, self.Joseph)
