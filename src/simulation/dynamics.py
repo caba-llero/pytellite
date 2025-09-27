@@ -66,7 +66,7 @@ def state_deriv(t: float, y: np.ndarray, J: np.ndarray, Ji: np.ndarray,
     return dydt
 
 @njit
-def state_deriv_kalman(y: np.ndarray, J: np.ndarray, Ji: np.ndarray, L: float) -> np.ndarray:
+def state_deriv_kalman(y: np.ndarray, J: np.ndarray, Ji: np.ndarray, L: np.ndarray) -> np.ndarray:
     '''
     Provisional function that returns the derivative of all states except for quaternion
     Used to integrate numerically (i.e. with RK45)

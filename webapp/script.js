@@ -21,7 +21,13 @@ const mainVis = document.getElementById('main-vis');
 const playPauseBtn = document.getElementById('playPauseBtn');
 const timelineSlider = document.getElementById('timelineSlider');
 const timeLabel = document.getElementById('timeLabel');
+const plotModeInputs = document.querySelectorAll('input[name="plotMode"]');
+const groundTruthSection = document.getElementById('groundTruthPlots');
+const errorSection = document.getElementById('errorPlots');
+const errorPlotsUnavailable = document.getElementById('errorPlotsUnavailable');
 
+let currentPlotMode = 'ground_truth';
+let requestedPlotMode = 'ground_truth';
 let latestQuat = { x: 0, y: 0, z: 0, w: 1 };
 let isPaused = false;
 
@@ -169,6 +175,58 @@ renderLegend('attitude');
 // Plotly charts
 const timeUnitSelect = document.getElementById('timeUnitSelect');
 const omegaUnitSelect = document.getElementById('omegaUnitSelect');
+let estimationEnabled = false;
+let errorData = null;
+let groundTruthPlotsInitialised = false;
+
+function hasErrorData() {
+    return !!(estimationEnabled && errorData && Array.isArray(errorData.Zdx) && Array.isArray(errorData.sigma));
+}
+
+function syncPlotModeRadios(mode) {
+    plotModeInputs.forEach(input => {
+        const isActive = input.value === mode;
+        input.checked = isActive;
+        input.setAttribute('aria-checked', isActive ? 'true' : 'false');
+    });
+}
+
+function setPlotMode(mode, { syncRadios = true, refresh = true, persistRequest = true, force = false } = {}) {
+    const normalized = mode === 'estimate_errors' ? 'estimate_errors' : 'ground_truth';
+    if (persistRequest || force) {
+        requestedPlotMode = normalized;
+    }
+    currentPlotMode = normalized;
+    if (syncRadios && plotModeInputs.length) {
+        syncPlotModeRadios(normalized);
+    }
+    if (groundTruthSection) groundTruthSection.classList.toggle('hidden', normalized !== 'ground_truth');
+    if (errorSection) errorSection.classList.toggle('hidden', normalized !== 'estimate_errors');
+
+    if (!refresh || !dataset) return;
+
+    if (normalized === 'estimate_errors') {
+        const dataAvailable = hasErrorData();
+        if (errorSection) errorSection.classList.toggle('no-data', !dataAvailable);
+        if (errorPlotsUnavailable) errorPlotsUnavailable.classList.toggle('hidden', dataAvailable);
+        if (dataAvailable) {
+            redrawErrorPlots(frameIndex);
+        }
+    } else {
+        if (errorSection) errorSection.classList.remove('no-data');
+        if (errorPlotsUnavailable) errorPlotsUnavailable.classList.add('hidden');
+        rebuildSeriesUpTo(frameIndex);
+    }
+}
+
+plotModeInputs.forEach(input => {
+    input.addEventListener('change', (e) => {
+        if (!e.target.checked) return;
+        setPlotMode(e.target.value);
+    });
+});
+
+setPlotMode(currentPlotMode, { syncRadios: true, refresh: false });
 
 function getTimeFactor() {
     const unit = (timeUnitSelect && timeUnitSelect.value) || 's';
@@ -196,7 +254,7 @@ function getOmegaUnitLabel() {
 
 function createMultiTraceChart(divId, yAxisTitle, traces) {
     try {
-        if (typeof Plotly === 'undefined') return;
+    if (typeof Plotly === 'undefined') return;
         const data = traces.map(t => ({ x: [], y: [], type: 'scatter', mode: 'lines', line: { color: t.color, width: 2 }, name: t.name }));
         const layout = {
             paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
@@ -217,35 +275,14 @@ function createMultiTraceChart(divId, yAxisTitle, traces) {
 }
 
 // Colors aligned with 3D axes: x red, y green, z blue; quaternion scalar white
-createMultiTraceChart('quatPlot', 'Attitude quaternion', [
-    { name: 'q<sub>x</sub>', color: '#ff0000' },
-    { name: 'q<sub>y</sub>', color: '#00ff00' },
-    { name: 'q<sub>z</sub>', color: '#0000ff' },
-    { name: 'q<sub>w</sub>', color: '#ffffff' }
-]);
-createMultiTraceChart('omegaPlot', 'Angular velocity', [
-    { name: 'ω<sub>x</sub>', color: '#ff0000' },
-    { name: 'ω<sub>y</sub>', color: '#00ff00' },
-    { name: 'ω<sub>z</sub>', color: '#0000ff' }
-]);
-createMultiTraceChart('hPlot', 'Wheel angular momentum', [
-    { name: 'h<sub>x</sub>', color: '#ff0000' },
-    { name: 'h<sub>y</sub>', color: '#00ff00' },
-    { name: 'h<sub>z</sub>', color: '#0000ff' }
-]);
-
-function relabelAxes() {
-    // Nothing dynamic to relabel for multi-trace plots beyond unit conversions handled in data
-}
 
 function rebuildSeriesUpTo(index) {
-    if (!dataset) return;
+    if (!dataset || typeof Plotly === 'undefined') return;
     const i = Math.min(index, dataset.t.length - 1);
     const tf = getTimeFactor();
     const of = getOmegaFactor();
     const xArr = dataset.t.slice(0, i + 1).map(t => t * tf);
     const restyleMulti = (id, yArrays) => {
-        // yArrays: array of arrays matching trace order
         const xs = yArrays.map(() => xArr);
         Plotly.restyle(id, { x: xs, y: yArrays }, [0,1,2,3].slice(0, yArrays.length));
     };
@@ -265,6 +302,97 @@ function rebuildSeriesUpTo(index) {
         dataset.hy.slice(0, i + 1),
         dataset.hz.slice(0, i + 1)
     ]);
+}
+
+function redrawErrorPlots(index) {
+    if (!hasErrorData() || typeof Plotly === 'undefined') {
+        return;
+    }
+    const estimatorTimes = Array.isArray(errorData.time) ? errorData.time : dataset.t;
+    const maxLen = Math.min(dataset.t.length, estimatorTimes.length);
+    if (maxLen === 0) return;
+    const i = Math.min(index, maxLen - 1);
+    const tf = getTimeFactor();
+    const rawTimes = estimatorTimes.slice(0, i + 1).map(t => Number(t ?? 0));
+    const timeSlice = rawTimes.map(t => t * tf);
+    const xAxisTitle = `Time (${getTimeUnitLabel()})`;
+
+    const plotError = (plotId, components, sigmaIndices, yAxisTitle, valueTransform = (x) => x) => {
+        const traces = [];
+        components.forEach((comp) => {
+            const series = errorData[comp.key];
+            if (!Array.isArray(series)) return;
+            const len = Math.min(series.length, timeSlice.length);
+            if (len === 0) return;
+            traces.push({
+                x: timeSlice.slice(0, len),
+                y: series.slice(0, len).map(v => valueTransform(Number(v ?? 0))),
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: comp.color, width: 2 },
+                name: comp.label
+            });
+        });
+        if (sigmaIndices) {
+            sigmaIndices.forEach((sigmaIndex) => {
+                const sigmaRow = errorData.sigma?.[sigmaIndex];
+                if (!Array.isArray(sigmaRow)) return;
+                const len = Math.min(sigmaRow.length, timeSlice.length);
+                if (len === 0) return;
+                const sigmaSeries = sigmaRow.slice(0, len).map(v => valueTransform(3 * Math.abs(Number(v ?? 0))));
+                const xs = timeSlice.slice(0, len);
+                traces.push({
+                    x: xs,
+                    y: sigmaSeries,
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#cccccc', width: 1, dash: 'dot' },
+                    hoverinfo: 'skip',
+                    showlegend: false
+                });
+                traces.push({
+                    x: xs,
+                    y: sigmaSeries.map(v => -v),
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: { color: '#cccccc', width: 1, dash: 'dot' },
+                    hoverinfo: 'skip',
+                    showlegend: false
+                });
+            });
+        }
+        if (!traces.length) {
+            Plotly.react(plotId, [], { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)' });
+            return;
+        }
+        const layout = {
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
+            xaxis: { color: 'white', gridcolor: '#222', title: { text: xAxisTitle, font: { color: 'white', size: 12 } } },
+            yaxis: { color: 'white', gridcolor: '#222', automargin: true, title: { text: yAxisTitle, font: { color: 'white', size: 12 } } },
+            legend: { font: { color: 'white' } }
+        };
+        Plotly.react(plotId, traces, layout, { responsive: true });
+    };
+
+    plotError('rotErrPlot', [
+        { key: 'Zdx', color: '#ff0000', label: 'Z_d,x' },
+        { key: 'Zdy', color: '#00ff00', label: 'Z_d,y' },
+        { key: 'Zdz', color: '#0000ff', label: 'Z_d,z' }
+    ], [0, 1, 2], 'Error rotation vector (rad)');
+
+    plotError('biasErrPlot', [
+        { key: 'Bdx', color: '#ff0000', label: 'B_d,x' },
+        { key: 'Bdy', color: '#00ff00', label: 'B_d,y' },
+        { key: 'Bdz', color: '#0000ff', label: 'B_d,z' }
+    ], [3, 4, 5], `Gyro bias error (${getOmegaUnitLabel()})`, (v) => v * getOmegaFactor());
+
+    plotError('wErrPlot', [
+        { key: 'wErrX', color: '#ff0000', label: 'ω error x' },
+        { key: 'wErrY', color: '#00ff00', label: 'ω error y' },
+        { key: 'wErrZ', color: '#0000ff', label: 'ω error z' }
+    ], null, `Angular velocity error (${getOmegaUnitLabel()})`, (v) => v * getOmegaFactor());
 }
 
 // WebSocket & Controls
@@ -293,24 +421,24 @@ function updateAllVisuals(index, isScrubbing = false) {
     timelineSlider.value = i;
     updateTimeLabel(i);
 
-    const allPlots = ['qxPlot', 'qyPlot', 'qzPlot', 'qwPlot', 'pPlot', 'qPlot', 'rPlot'];
-    const dataKeys = ['qx', 'qy', 'qz', 'qw', 'p', 'q', 'r'];
+  if (typeof Plotly === 'undefined') return;
+
+    if (currentPlotMode === 'estimate_errors') {
+        redrawErrorPlots(i);
+        return;
+    }
 
     if (isScrubbing) {
-        if (typeof Plotly !== 'undefined') {
-            rebuildSeriesUpTo(i);
-        }
-    } else {
-        if (typeof Plotly !== 'undefined') {
-            const tf = getTimeFactor();
-            const of = getOmegaFactor();
-            const tx = dataset.t[i] * tf;
-            // Extend traces for multi-trace plots
-            Plotly.extendTraces('quatPlot',  { x: [[tx],[tx],[tx],[tx]], y: [[dataset.qx[i]],[dataset.qy[i]],[dataset.qz[i]],[dataset.qw[i]]] }, [0,1,2,3]);
-            Plotly.extendTraces('omegaPlot', { x: [[tx],[tx],[tx]], y: [[dataset.p[i] * of],[dataset.q[i] * of],[dataset.r[i] * of]] }, [0,1,2]);
-            Plotly.extendTraces('hPlot',     { x: [[tx],[tx],[tx]], y: [[dataset.hx[i]],[dataset.hy[i]],[dataset.hz[i]]] }, [0,1,2]);
-        }
+        rebuildSeriesUpTo(i);
+        return;
     }
+
+    const tf = getTimeFactor();
+    const of = getOmegaFactor();
+    const tx = dataset.t[i] * tf;
+    Plotly.extendTraces('quatPlot',  { x: [[tx],[tx],[tx],[tx]], y: [[dataset.qx[i]],[dataset.qy[i]],[dataset.qz[i]],[dataset.qw[i]]] }, [0,1,2,3]);
+    Plotly.extendTraces('omegaPlot', { x: [[tx],[tx],[tx]], y: [[dataset.p[i] * of],[dataset.q[i] * of],[dataset.r[i] * of]] }, [0,1,2]);
+    Plotly.extendTraces('hPlot',     { x: [[tx],[tx],[tx]], y: [[dataset.hx[i]],[dataset.hy[i]],[dataset.hz[i]]] }, [0,1,2]);
 }
 
 function setPlayingState(playing) {
@@ -377,35 +505,39 @@ function startPlaybackFromDataset(data, m=null) {
         renderSimInfo(metrics);
     }
     frameIndex = 0;
-    if (typeof Plotly !== 'undefined') {
-        try {
-            // Clear multi-trace plots
-            Plotly.deleteTraces('quatPlot', [0,1,2,3]);
-            Plotly.deleteTraces('omegaPlot', [0,1,2]);
-            Plotly.deleteTraces('hPlot', [0,1,2]);
-            createMultiTraceChart('quatPlot', 'Attitude quaternion', [
-                { name: 'q<sub>x</sub>', color: '#ff0000' },
-                { name: 'q<sub>y</sub>', color: '#00ff00' },
-                { name: 'q<sub>z</sub>', color: '#0000ff' },
-                { name: 'q<sub>w</sub>', color: '#ffffff' }
-            ]);
-            createMultiTraceChart('omegaPlot', 'Angular velocity', [
-                { name: 'ω<sub>x</sub>', color: '#ff0000' },
-                { name: 'ω<sub>y</sub>', color: '#00ff00' },
-                { name: 'ω<sub>z</sub>', color: '#0000ff' }
-            ]);
-            createMultiTraceChart('hPlot', 'Wheel angular momentum', [
-                { name: 'h<sub>x</sub>', color: '#ff0000' },
-                { name: 'h<sub>y</sub>', color: '#00ff00' },
-                { name: 'h<sub>z</sub>', color: '#0000ff' }
-            ]);
-            relabelAxes();
-        } catch (e) {
-            console.warn('Plotly restyle failed, continuing.', e);
-        }
+    if (typeof Plotly !== 'undefined' && !groundTruthPlotsInitialised) {
+        createMultiTraceChart('quatPlot', 'Attitude quaternion', [
+            { name: 'q<sub>x</sub>', color: '#ff0000' },
+            { name: 'q<sub>y</sub>', color: '#00ff00' },
+            { name: 'q<sub>z</sub>', color: '#0000ff' },
+            { name: 'q<sub>w</sub>', color: '#ffffff' }
+        ]);
+        createMultiTraceChart('omegaPlot', 'Angular velocity', [
+            { name: 'ω<sub>x</sub>', color: '#ff0000' },
+            { name: 'ω<sub>y</sub>', color: '#00ff00' },
+            { name: 'ω<sub>z</sub>', color: '#0000ff' }
+        ]);
+        createMultiTraceChart('hPlot', 'Wheel angular momentum', [
+            { name: 'h<sub>x</sub>', color: '#ff0000' },
+            { name: 'h<sub>y</sub>', color: '#00ff00' },
+            { name: 'h<sub>z</sub>', color: '#0000ff' }
+        ]);
+        groundTruthPlotsInitialised = true;
     }
+
     timelineSlider.max = dataset.t.length - 1;
     updateAllVisuals(0, true);
+    if (!hasErrorData()) {
+        if (requestedPlotMode === 'estimate_errors') {
+            setPlotMode('estimate_errors', { syncRadios: true, refresh: true, persistRequest: false });
+        } else {
+            setPlotMode('ground_truth', { syncRadios: true, refresh: true, persistRequest: false });
+        }
+    } else if (requestedPlotMode === 'estimate_errors') {
+        setPlotMode('estimate_errors', { syncRadios: true, refresh: true });
+    } else {
+        setPlotMode('ground_truth', { syncRadios: true, refresh: true, persistRequest: false });
+    }
     setPlayingState(true);
     if (playbackTimer) clearInterval(playbackTimer);
     const intervalMs = 1000.0 / (dataset.sample_rate || 30.0);
@@ -421,15 +553,26 @@ function startPlaybackFromDataset(data, m=null) {
 // Attempt to start from precomputed dataset immediately (without waiting for WS)
 (function tryPrecomputedPlayback() {
     const pre = sessionStorage.getItem('precomputed_dataset');
+    const preErrors = sessionStorage.getItem('precomputed_errors');
     if (pre) {
         try {
             const data = JSON.parse(pre);
             // Also try to read metrics if present (future-proof)
             const preMetrics = sessionStorage.getItem('precomputed_metrics');
             const m = preMetrics ? JSON.parse(preMetrics) : null;
+            if (preErrors) {
+                try {
+                    errorData = JSON.parse(preErrors);
+                    estimationEnabled = true;
+                } catch (_) {
+                    errorData = null;
+                    estimationEnabled = false;
+                }
+            }
             startPlaybackFromDataset(data, m);
             sessionStorage.removeItem('precomputed_dataset');
             if (preMetrics) sessionStorage.removeItem('precomputed_metrics');
+            if (preErrors) sessionStorage.removeItem('precomputed_errors');
             precomputedDataLoaded = true;
         } catch (e) {
             console.warn('Failed to parse precomputed dataset.', e);
@@ -460,6 +603,7 @@ socket.onopen = () => {
     const cq2 = urlParams.get('cq2');
     const cq3 = urlParams.get('cq3');
     const epoch = urlParams.get('epoch');
+    const enableEstimation = urlParams.get('enable_estimation') === 'true';
 
     const payload = {};
     if (inertia.every(v => typeof v === 'number' && !isNaN(v))) payload.inertia = inertia;
@@ -480,6 +624,25 @@ socket.onopen = () => {
     if (qc.every(v => typeof v === 'number' && !isNaN(v))) payload.qc = qc;
     if (epoch) payload.epoch_utc = epoch;
 
+    if (enableEstimation) {
+        payload.estimation = {
+            enable_estimation: true,
+            ctrl_freq: urlParams.get('ctrl_freq') ? parseFloat(urlParams.get('ctrl_freq')) : null,
+            gt_freq: urlParams.get('gt_freq') ? parseFloat(urlParams.get('gt_freq')) : null,
+            rng_seed: urlParams.get('rng_seed') ? parseFloat(urlParams.get('rng_seed')) : null,
+            gyro_meas_freq: urlParams.get('gyro_meas_freq') ? parseFloat(urlParams.get('gyro_meas_freq')) : null,
+            gyro_arw: urlParams.get('gyro_arw') ? parseFloat(urlParams.get('gyro_arw')) : null,
+            gyro_rrw: urlParams.get('gyro_rrw') ? parseFloat(urlParams.get('gyro_rrw')) : null,
+            gyro_true_bias: urlParams.get('gyro_true_bias') ? parseFloat(urlParams.get('gyro_true_bias')) : null,
+            gyro_est_bias: urlParams.get('gyro_est_bias') ? parseFloat(urlParams.get('gyro_est_bias')) : null,
+            gyro_init_cov: urlParams.get('gyro_init_cov') ? parseFloat(urlParams.get('gyro_init_cov')) : null,
+            star_meas_freq: urlParams.get('star_meas_freq') ? parseFloat(urlParams.get('star_meas_freq')) : null,
+            star_iso_acc: urlParams.get('star_iso_acc') ? parseFloat(urlParams.get('star_iso_acc')) : null,
+            star_init_acc: urlParams.get('star_init_acc') ? parseFloat(urlParams.get('star_init_acc')) : null,
+            attitude_init_cov: urlParams.get('attitude_init_cov') ? parseFloat(urlParams.get('attitude_init_cov')) : null
+        };
+    }
+
     if (Object.keys(payload).length > 0) {
         socket.send(JSON.stringify({ command: 'configure', payload }));
     } else {
@@ -491,6 +654,45 @@ socket.onmessage = (event) => {
     const msg = JSON.parse(event.data);
     if (msg.dataset) {
         startPlaybackFromDataset(msg.dataset, msg.metrics || null);
+        if (msg.errors) {
+            errorData = msg.errors;
+            estimationEnabled = true;
+            try {
+                const preview = (arr, n = 5) => Array.isArray(arr) ? arr.slice(0, n) : arr;
+                const diagPreview = Array.isArray(msg.errors.sigma)
+                    ? msg.errors.sigma.slice(0, Math.min(6, msg.errors.sigma.length)).map(row => preview(row))
+                    : msg.errors.sigma;
+                console.log('Estimator snapshot', {
+                    time: preview(msg.errors.time),
+                    rotationError: {
+                        Zdx: preview(msg.errors.Zdx),
+                        Zdy: preview(msg.errors.Zdy),
+                        Zdz: preview(msg.errors.Zdz),
+                    },
+                    biasError: {
+                        Bdx: preview(msg.errors.Bdx),
+                        Bdy: preview(msg.errors.Bdy),
+                        Bdz: preview(msg.errors.Bdz),
+                    },
+                    angularVelError: {
+                        wErrX: preview(msg.errors.wErrX),
+                        wErrY: preview(msg.errors.wErrY),
+                        wErrZ: preview(msg.errors.wErrZ),
+                    },
+                    sigmaDiag: diagPreview,
+                });
+            } catch (snapshotErr) {
+                console.warn('Failed to log estimator snapshot', snapshotErr);
+            }
+            setPlotMode(requestedPlotMode, { syncRadios: true, refresh: true, persistRequest: false });
+            sessionStorage.removeItem('precomputed_errors');
+        } else {
+            estimationEnabled = false;
+            errorData = null;
+            if (currentPlotMode === 'estimate_errors') {
+                setPlotMode('ground_truth');
+            }
+        }
     }
 };
 
@@ -500,14 +702,20 @@ socket.onerror = () => {};
 // Unit controls handlers
 if (timeUnitSelect) {
     timeUnitSelect.addEventListener('change', () => {
-        relabelAxes();
-        rebuildSeriesUpTo(frameIndex);
+        if (currentPlotMode === 'ground_truth') {
+            rebuildSeriesUpTo(frameIndex);
+        } else if (currentPlotMode === 'estimate_errors') {
+            redrawErrorPlots(frameIndex);
+        }
     });
 }
 if (omegaUnitSelect) {
     omegaUnitSelect.addEventListener('change', () => {
-        relabelAxes();
-        rebuildSeriesUpTo(frameIndex);
+        if (currentPlotMode === 'ground_truth') {
+            rebuildSeriesUpTo(frameIndex);
+        } else if (currentPlotMode === 'estimate_errors') {
+            redrawErrorPlots(frameIndex);
+        }
     });
 }
 

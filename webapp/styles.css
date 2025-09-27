@@ -1,3 +1,7 @@
+.plot-section.no-data .plot-wrapper {
+    opacity: 0.35;
+    pointer-events: none;
+}
 body {
     margin: 0;
     background-color: #111;
@@ -53,6 +57,80 @@ body {
     display: flex;
     flex-direction: column;
     margin: 0 5px;
+}
+#groundTruthPlots,
+#errorPlots {
+    position: relative;
+}
+
+.plot-section.hidden {
+    display: none;
+}
+
+.plot-section.no-data .plot-wrapper {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+.plot-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 13px;
+    color: #aeb6c2;
+    background: rgba(15, 19, 24, 0.7);
+    border: 1px dashed rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.unit-selectors {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 6px 2px;
+    color: #cfd8e3;
+    font-size: 12px;
+}
+
+.unit-selectors select {
+    background: #12161b;
+    color: #e6eefc;
+    border: 1px solid #1f242b;
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+
+.plot-mode-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 2px;
+    color: #cfd8e3;
+    font-size: 12px;
+}
+
+.plot-mode-selector input[type="radio"] {
+    accent-color: #0091c7;
+}
+
+.plot-mode-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.plot-mode-option span {
+    color: #e6eefc;
+    font-size: 13px;
+}
+
+.plot-mode-hint {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #8fa1b3;
 }
 .plot-wrapper {
     flex: 1;

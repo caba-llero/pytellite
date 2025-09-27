@@ -169,16 +169,19 @@ async function init() {
         const show = (ctrlType === 'inertial_linear' || ctrlType === 'inertial_nonlinear');
         ctrlParams.style.display = show ? '' : 'none';
     }
-    setValue('KP', kp);
-    setValue('KD', kd);
-    setValue('CQ0', cq0);
-    setValue('CQ1', cq1);
-    setValue('CQ2', cq2);
-    setValue('CQ3', cq3);
+        setValue('KP', kp);
+        setValue('KD', kd);
+        setValue('CQ0', cq0);
+        setValue('CQ1', cq1);
+        setValue('CQ2', cq2);
+        setValue('CQ3', cq3);
 
     // Estimation defaults
-    const estimation = saved.estimation || defaults.estimation || {};
-    const enableEstimation = estimation.enable_estimation || false;
+    const mergedEstimation = {
+        ...(defaults.estimation || {}),
+        ...(saved.estimation || {})
+    };
+    const enableEstimation = Boolean(mergedEstimation.enable_estimation);
     const estimationCheckbox = document.getElementById('ENABLE_ESTIMATION');
     if (estimationCheckbox) {
         estimationCheckbox.checked = enableEstimation;
@@ -193,18 +196,35 @@ async function init() {
         mekfInfo.style.display = enableEstimation ? 'block' : 'none';
     }
     // Set default values for estimation parameters
-    setValue('CTRL_FREQ', estimation.ctrl_freq ?? 100.0);
-    setValue('GT_FREQ', estimation.gt_freq ?? 1000.0);
-    setValue('RNG_SEED', estimation.rng_seed ?? 42);
-    setValue('GYRO_MEAS_FREQ', estimation.gyro_meas_freq ?? 100.0);
-    setValue('GYRO_ARW', estimation.gyro_arw ?? 0.0);
-    setValue('GYRO_RRW', estimation.gyro_rrw ?? 0.0);
-    setValue('GYRO_TRUE_BIAS', estimation.gyro_true_bias ?? 0.0);
-    setValue('GYRO_EST_BIAS', estimation.gyro_est_bias ?? 0.0);
-    setValue('GYRO_INIT_COV', estimation.gyro_init_cov ?? 0.0);
-    setValue('STAR_MEAS_FREQ', estimation.star_meas_freq ?? 1.0);
-    setValue('STAR_ISO_ACC', estimation.star_iso_acc ?? 0.0);
-    setValue('STAR_INIT_ACC', estimation.star_init_acc ?? 0.0);
+    const estimationDefaults = {
+        ctrl_freq: 100.0,
+        gt_freq: 1000.0,
+        rng_seed: 42,
+        gyro_meas_freq: 100.0,
+        gyro_arw: 0.0,
+        gyro_rrw: 0.0,
+        gyro_true_bias: 0.0,
+        gyro_est_bias: 0.0,
+        gyro_init_cov: 0.0,
+        star_meas_freq: 1.0,
+        star_iso_acc: 0.0,
+        star_init_acc: 0.0,
+        attitude_init_cov: 0.0,
+    };
+    const estimationValues = { ...estimationDefaults, ...mergedEstimation };
+    setValue('CTRL_FREQ', estimationValues.ctrl_freq);
+    setValue('GT_FREQ', estimationValues.gt_freq);
+    setValue('RNG_SEED', estimationValues.rng_seed);
+    setValue('GYRO_MEAS_FREQ', estimationValues.gyro_meas_freq);
+    setValue('GYRO_ARW', estimationValues.gyro_arw);
+    setValue('GYRO_RRW', estimationValues.gyro_rrw);
+    setValue('GYRO_TRUE_BIAS', estimationValues.gyro_true_bias);
+    setValue('GYRO_EST_BIAS', estimationValues.gyro_est_bias);
+    setValue('GYRO_INIT_COV', estimationValues.gyro_init_cov);
+    setValue('STAR_MEAS_FREQ', estimationValues.star_meas_freq);
+    setValue('STAR_ISO_ACC', estimationValues.star_iso_acc);
+    setValue('STAR_INIT_ACC', estimationValues.star_init_acc);
+    setValue('ATTITUDE_INIT_COV', estimationValues.attitude_init_cov);
 
     // Tabs behavior
     const tabs = document.querySelectorAll('.tab');
@@ -250,7 +270,8 @@ async function init() {
                 gyro_init_cov: readNumber('GYRO_INIT_COV'),
                 star_meas_freq: readNumber('STAR_MEAS_FREQ'),
                 star_iso_acc: readNumber('STAR_ISO_ACC'),
-                star_init_acc: readNumber('STAR_INIT_ACC')
+                star_init_acc: readNumber('STAR_INIT_ACC'),
+                attitude_init_cov: readNumber('ATTITUDE_INIT_COV')
             })
         };
         // persist selections
@@ -290,7 +311,8 @@ async function init() {
                 gyro_init_cov: params.gyro_init_cov,
                 star_meas_freq: params.star_meas_freq,
                 star_iso_acc: params.star_iso_acc,
-                star_init_acc: params.star_init_acc
+                star_init_acc: params.star_init_acc,
+                attitude_init_cov: params.attitude_init_cov
             }
         };
         localStorage.setItem('sim_config', JSON.stringify(persisted));

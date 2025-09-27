@@ -47,16 +47,27 @@
             animateTo(10);
 
             // Build compute payload from URL params
-            function readFloat(k) { const v = params.get(k); return v !== null ? parseFloat(v) : null; }
+            function readFloat(k) {
+                const v = params.get(k);
+                if (v === null) return null;
+                const parsed = parseFloat(v);
+                return Number.isNaN(parsed) ? null : parsed;
+            }
             const payload = {};
-            const inertia = [readFloat('j1'), readFloat('j2'), readFloat('j3')];
-            const shape = [readFloat('sx'), readFloat('sy'), readFloat('sz')];
-            const q_bi = [readFloat('qx'), readFloat('qy'), readFloat('qz'), readFloat('qw')];
-            const omega = [readFloat('wx'), readFloat('wy'), readFloat('wz')];
-            if (inertia.every(v => typeof v === 'number' && !isNaN(v))) payload.inertia = inertia;
-            if (shape.every(v => typeof v === 'number' && !isNaN(v))) payload.shape = shape;
-            if (q_bi.every(v => typeof v === 'number' && !isNaN(v))) payload.q_bi = q_bi;
-            if (omega.every(v => typeof v === 'number' && !isNaN(v))) payload.omega_bi_radps = omega;
+            const readVector = (keys) => {
+                const vals = keys.map(readFloat);
+                if (vals.some(v => v === null)) return null;
+                return vals;
+            };
+                
+            const inertia = readVector(['j1', 'j2', 'j3']);
+            const shape = readVector(['sx', 'sy', 'sz']);
+            const q_bi = readVector(['qx', 'qy', 'qz', 'qw']);
+            const omega = readVector(['wx', 'wy', 'wz']);
+            if (inertia) payload.inertia = inertia;
+            if (shape) payload.shape = shape;
+            if (q_bi) payload.q_bi = q_bi;
+            if (omega) payload.omega_bi_radps = omega;
             const tmax = readFloat('tmax'); if (tmax !== null) payload.t_max = tmax;
             const play = readFloat('play'); if (play !== null) payload.playback_speed = play;
             const sr = readFloat('sr'); if (sr !== null) payload.sample_rate = sr;
@@ -81,6 +92,27 @@
             const epoch = params.get('epoch');
             if (epoch) payload.epoch_utc = epoch;
 
+            // Estimation parameters (only forward if enabled)
+            const enableEstimation = params.get('enable_estimation') === 'true';
+            if (enableEstimation) {
+                payload.estimation = {
+                    enable_estimation: true,
+                    ctrl_freq: readFloat('ctrl_freq'),
+                    gt_freq: readFloat('gt_freq'),
+                    rng_seed: readFloat('rng_seed'),
+                    gyro_meas_freq: readFloat('gyro_meas_freq'),
+                    gyro_arw: readFloat('gyro_arw'),
+                    gyro_rrw: readFloat('gyro_rrw'),
+                    gyro_true_bias: readFloat('gyro_true_bias'),
+                    gyro_est_bias: readFloat('gyro_est_bias'),
+                    gyro_init_cov: readFloat('gyro_init_cov'),
+                    star_meas_freq: readFloat('star_meas_freq'),
+                    star_iso_acc: readFloat('star_iso_acc'),
+                    star_init_acc: readFloat('star_init_acc'),
+                    attitude_init_cov: readFloat('attitude_init_cov'),
+                };
+            }
+
             animateTo(25);
             // Request precomputation
             try {
@@ -98,6 +130,9 @@
                 sessionStorage.setItem('precomputed_dataset', JSON.stringify(data.dataset));
                 if (data.metrics) {
                     sessionStorage.setItem('precomputed_metrics', JSON.stringify(data.metrics));
+                }
+                if (data.errors) {
+                    sessionStorage.setItem('precomputed_errors', JSON.stringify(data.errors));
                 }
                 animateTo(100);
                 window.location.replace('/simulation?' + params.toString());

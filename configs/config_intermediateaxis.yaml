@@ -60,6 +60,21 @@ control:
   kd: 0.0
   qc: [0.0, 0.0, 0.0, 1.0]
 
+estimation:
+  enable_estimation: true
+  gt_freq: 1.0
+  gyro_meas_freq: 100.0
+  star_meas_freq: 1.0
+  ctrl_freq: 1.0
+  gyro_arw: 3.0e-6
+  gyro_rrw: 3.0e-9
+  star_iso_acc: 3.0e-5
+  star_init_acc: 0.0
+  gyro_true_bias: 5.0e-7
+  gyro_est_bias: 5.0e-7
+  gyro_init_cov: 1.0e-12
+  attitude_init_cov: 9.0e-10
+
 initial_conditions:
   # ~500 km circular orbit around Earth, ECI position on x-axis.
   r_eci_m: [6871000.0, 0.0, 0.0]

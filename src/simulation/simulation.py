@@ -1,220 +1,271 @@
-
-
 from __future__ import annotations
-from scipy.integrate import solve_ivp
+
 import argparse
-import numpy as np
 import os
+from typing import Any, Dict, Optional
+
+import numpy as np
 import yaml
-from typing import Optional, Dict, Any
+from scipy.integrate import solve_ivp
 
 from ..math import quaternion as qm
-from .dynamics import state_deriv, state_deriv_kalman
-from ..math.quaternion import slerp_quat_array
 from ..math.integration import rk45_step_autonomous as int_step
-import kalman as k
+from ..math.quaternion import slerp_quat_array
+from . import kalman as k
 from .control import control_laws
+from .dynamics import state_deriv, state_deriv_kalman
 
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
+ARCSEC_TO_RAD = np.deg2rad(1.0 / 3600.0)
+DEFAULT_QC = np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+
+
+def _map_control_type(control_type: object) -> int:
+    """Normalize control type selector to internal integer identifier."""
+    if isinstance(control_type, (int, np.integer)):
+        return int(control_type)
+    if isinstance(control_type, str):
+        s = control_type.lower().strip()
+        if s in {"none", "zero_torque", "off"}:
+            return 0
+        if s in {"inertial", "inertial_linear", "tracking"}:
+            return 1
+        if s in {"inertial_nonlinear", "nonlinear_tracking"}:
+            return 2
+    return 0
+
 
 class Plant:
-    def __init__(self, config_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None):
+    """Bundle truth dynamics and optional attitude estimation."""
+
+    def __init__(self, config_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None) -> None:
         if config is not None:
             cfg = config
         else:
             if config_path is None:
-                # Use default config relative to this module's location
                 module_dir = os.path.dirname(os.path.abspath(__file__))
                 config_path = os.path.join(module_dir, "config_default.yaml")
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg = yaml.safe_load(f)
 
-
+        self._load_simulation_core(cfg)
+        self._configure_estimation(cfg.get("estimation", {}))
+    
+    def _load_simulation_core(self, cfg: Dict[str, Any]) -> None:
+        """Load core dynamics configuration."""
         # Simulation timing
         sim_section = cfg.get("simulation", {})
         self.dt_sim = float(sim_section.get("dt_sim", 0.1))
         self.t_sim = 0.0
 
         # Initial orbital state
-        self.r0 = np.array(cfg["initial_conditions"]["r_eci_m"], dtype=float)
-        self.v0 = np.array(cfg["initial_conditions"]["v_eci_mps"], dtype=float)
-
+        ic_section = cfg.get("initial_conditions", {})
+        self.r0 = np.array(ic_section.get("r_eci_m", [0.0, 0.0, 0.0]), dtype=float)
+        self.v0 = np.array(ic_section.get("v_eci_mps", [0.0, 0.0, 0.0]), dtype=float)
 
         # Spacecraft properties
-        self.J = np.diag(cfg["spacecraft"]["inertia"]).astype(float)
+        inertia = cfg.get("spacecraft", {}).get("inertia", [1.0, 1.0, 1.0])
+        self.J = np.diag(np.array(inertia, dtype=float))
         self.Ji = np.linalg.inv(self.J)
 
         # Initial attitude state
-        ic = cfg["initial_conditions"]
-        frame = ic.get("frame", "inertial")
-
-        if frame == 'orbit':
+        frame = ic_section.get("frame", "inertial")
+        if frame == "orbit":
             raise NotImplementedError("Orbit frame initialization is not yet refactored.")
-            # The following code needs to be updated to use numpy arrays for quaternions
-            # q_bo_init = Quaternion(ic["q_ob"])
-            # w_bo_init = np.array(ic["omega_bo_radps"], dtype=float)
-
-            # # Compute initial orbit frame
-            # _, _, a0 = rk4_step_orbit(self.r0, self.v0, 0) # Get initial acceleration
-            # R_io, w_oi = orbit_to_inertial(self.r0, self.v0, a0)
-            # q_io = rotmatrix_to_quaternion(R_io)
-
-            # # Initialize body state wrt inertial frame
-            # self.q_bi = q_io * q_bo_init
-            
-            # R_bo = quat_to_rotmatrix(q_bo_init)
-            # self.w_bi = w_bo_init + R_bo.T @ w_oi
-        elif frame == 'inertial':
-            self.q_bi = np.array(ic["q_bi"], dtype=float)
-            self.w_bi = np.array(ic["omega_bi_radps"], dtype=float)
-        else:
+        if frame != "inertial":
             raise ValueError(f"Invalid initial condition frame: {frame}")
+
+        self.q_bi = np.array(ic_section.get("q_bi", [0.0, 0.0, 0.0, 1.0]), dtype=float)
+        self.w_bi = np.array(ic_section.get("omega_bi_radps", [0.0, 0.0, 0.0]), dtype=float)
 
         # Initial reaction wheel angular momentum (aligned with principal axes)
         self.h0 = np.zeros(3, dtype=float)
 
-    def compute_states(self, t_max: float, rtol: float = 1e-12, atol: float = 1e-12, 
-        control_type: Optional[object] = None, kp: Optional[float] = None, 
-        kd: Optional[float] = None, qc: Optional[np.ndarray] = None) -> np.ndarray:
-        """
-        Compute the states of the plant over a given time range.
-        """
-        t_span = (0, t_max)
+    def _configure_estimation(self, cfg: Dict[str, Any]) -> None:
+        """Load estimation-related parameters (defaults when disabled)."""
+
+        def _to_float(value: Any, default: float = 0.0) -> float:
+            try:
+                if value is None:
+                    return default
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        self.estimation_enabled = bool(cfg.get("enable_estimation", False))
+
+        # Sampling intervals (fallbacks ensure estimator still runs when disabled)
+        freq_truth = _to_float(cfg.get("gt_freq"), 0.0)
+        freq_gyro = _to_float(cfg.get("gyro_meas_freq"), 0.0)
+        freq_star = _to_float(cfg.get("star_meas_freq"), 0.0)
+        freq_ctrl = _to_float(cfg.get("ctrl_freq"), 0.0)
+
+        self.dt_truth = 1.0 / freq_truth if freq_truth > 0 else 0.01
+        self.dt_gyro = 1.0 / freq_gyro if freq_gyro > 0 else self.dt_truth
+        self.dt_star = 1.0 / freq_star if freq_star > 0 else self.dt_truth
+        self.dt_ctrl = 1.0 / freq_ctrl if freq_ctrl > 0 else self.dt_truth
+
+        self.freq_truth = 1.0 / self.dt_truth
+        self.freq_gyro = 1.0 / self.dt_gyro if self.dt_gyro > 0 else 0.0
+        self.freq_startracker = 1.0 / self.dt_star if self.dt_star > 0 else 0.0
+        self.freq_control = 1.0 / self.dt_ctrl if self.dt_ctrl > 0 else 0.0
+
+        self.rng_seed = int(_to_float(cfg.get("rng_seed"), 0.0))
+        self.sigma_startracker = _to_float(cfg.get("star_iso_acc"), 0.0)
+        self.init_inaccuracy = _to_float(cfg.get("star_init_acc"), 0.0)
+        self.sigma_v = _to_float(cfg.get("gyro_arw"), 0.0)
+        self.sigma_u = _to_float(cfg.get("gyro_rrw"), 0.0)
+
+        bias_true = _to_float(cfg.get("gyro_true_bias"), 0.0)
+        bias_est = _to_float(cfg.get("gyro_est_bias"), 0.0)
+        bias_init_cov = max(_to_float(cfg.get("gyro_init_cov"), 0.0), 0.0)
+        attitude_init_cov = max(_to_float(cfg.get("attitude_init_cov"), bias_init_cov), 0.0)
+
+        self.B_t_0 = np.full(3, bias_true, dtype=float)
+        self.B_h_0 = np.full(3, bias_est, dtype=float)
+        self.Pq = np.eye(3) * attitude_init_cov
+        self.Pb = np.eye(3) * bias_init_cov
+
+        self.simple_Phi = bool(cfg.get("simple_phi", False))
+        self.Joseph = bool(cfg.get("joseph_covariance", True))
+
+        # Initial truth/estimate seeds (MEKF uses these as starting point)
+        self.q_t_0 = self.q_bi.copy()
+        self.w_t_0 = self.w_bi.copy()
+
+    def compute_states(
+        self,
+        t_max: float,
+        rtol: float = 1e-12,
+        atol: float = 1e-12,
+        control_type: Optional[object] = None,
+        kp: Optional[float] = None,
+        kd: Optional[float] = None,
+        qc: Optional[np.ndarray] = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Integrate plant dynamics without estimation."""
+
+        t_span = (0.0, t_max)
         y0 = np.hstack((self.r0, self.v0, self.w_bi, self.q_bi, self.h0))
-        
-        # Map control_type to integer expected by JITed dynamics
-        def _map_control_type(ct: object) -> int:
-            if isinstance(ct, (int, np.integer)):
-                return int(ct)
-            if isinstance(ct, str):
-                s = ct.lower().strip()
-                if s in ("none", "zero_torque"):
-                    return 0
-                if s in ("inertial", "inertial_linear", "tracking"):
-                    return 1
-                if s in ("inertial_nonlinear", "nonlinear_tracking"):
-                    return 2
-            return 0
 
         ct_int = _map_control_type(control_type)
         kp_val = float(kp) if kp is not None else 0.0
         kd_val = float(kd) if kd is not None else 0.0
-        qc_arr = np.array(qc, dtype=float) if qc is not None else np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+        qc_arr = np.array(qc, dtype=float) if qc is not None else DEFAULT_QC
 
-        # Prepare args for state_deriv
         args = (self.J, self.Ji, ct_int, kp_val, kd_val, qc_arr)
-            
         sol = solve_ivp(state_deriv, t_span, y0, args=args, rtol=rtol, atol=atol)
         return sol.t, sol.y
 
-    def compute_states_kalman(self, t_max: float, dt_t: float, dt_m: float, dt_g: float, dt_c: float,
-        rtol: float = 1e-12, atol: float = 1e-12, 
-        control_type: Optional[object] = None, kp: Optional[float] = None, 
-        kd: Optional[float] = None, qc: Optional[np.ndarray] = None) -> np.ndarray:
-        """
-        Compute the states of the plant over a given time range using the MEKF (estimation option on)
-        """
+    def compute_states_kalman(
+        self,
+        t_max: float,
+        rtol: float = 1e-12,
+        atol: float = 1e-12,
+        control_type: Optional[object] = None,
+        kp: Optional[float] = None,
+        kd: Optional[float] = None,
+        qc: Optional[np.ndarray] = None,
+    ) -> dict[str, np.ndarray]:
+
+        """Run MEKF-based simulation and log truth/estimate (estimation tab)."""
+
+        if not self.estimation_enabled:
+            raise RuntimeError("Estimation is disabled; enable it in the configuration to call this method.")
+
+        qc_arr = np.array(qc, dtype=float) if qc is not None else DEFAULT_QC
+        ct_int = _map_control_type(control_type)
+        kp_val = float(kp) if kp is not None else 0.0
+        kd_val = float(kd) if kd is not None else 0.0
 
         I3 = np.eye(3)
-        O3 = np.zeros((3,3))
-        arcsec_to_rad = self.arcsec_to_rad
-
-        # Measurement model matrices
+        O3 = np.zeros((3, 3))
         H = np.hstack((I3, O3))
-        R = I3 * (self.sigma_startracker * arcsec_to_rad) ** 2
+        R = I3 * (self.sigma_startracker * ARCSEC_TO_RAD) ** 2
 
-        # Truth time grid and measurement & control update indices
-        times = np.arange(0, self.t_max, self.dt)
-        idx_gyro = k.measurement_indices(self.t_max, self.dt, self.freq_gyro)
-        idx_star = k.measurement_indices(self.t_max, self.dt, self.freq_startracker)
-        idx_ctrl = k.measurement_indices(self.t_max, self.dt, self.freq_control)
-        idx_all = idx_gyro | idx_star | idx_ctrl
+        times = np.arange(0.0, t_max, self.dt_truth)
+        idx_gyro = k.measurement_indices(t_max, self.dt_truth, self.freq_gyro)
+        idx_star = k.measurement_indices(t_max, self.dt_truth, self.freq_startracker)
+        idx_ctrl = k.measurement_indices(t_max, self.dt_truth, self.freq_control)
+        idx_all = sorted(idx_gyro | idx_star | idx_ctrl)
         timesteps = len(idx_all)
 
-        n = 3 
-        np.random.seed(self.rng_seed) # set RNG seed
+        n = 3
+        np.random.seed(self.rng_seed)
 
-        # Initial attitude estimate from a noisy measurement
-        Z_n = np.random.normal(0, self.sigma_startracker * arcsec_to_rad * self.init_inaccuracy, n).reshape(-1, 1) 
+        Z_n = np.random.normal(0, self.sigma_startracker * ARCSEC_TO_RAD * self.init_inaccuracy, n).reshape(-1, 1)
         q_m_0 = self.q_t_0.reshape(-1, 1) + 0.5 * k.Xi(self.q_t_0) @ Z_n
         q_m_0 = q_m_0.flatten() / np.linalg.norm(q_m_0)
         q_h_0 = q_m_0
 
-        ## Allocate logs ____________________________________________________________________________________
-        # Estimates
-        q_h_l = np.empty((4, timesteps)) # attitude
-        w_h_l = np.empty((3, timesteps)) # angular velocity
-        B_h_l = np.empty((3, timesteps)) # gyro bias
-        
-        # Ground truth
+        q_h_l = np.empty((4, timesteps))
+        w_h_l = np.empty((3, timesteps))
+        B_h_l = np.empty((3, timesteps))
         B_t_l = np.empty((3, timesteps))
         w_t_l = np.empty((3, timesteps))
         q_t_l = np.empty((4, timesteps))
+        h_l = np.empty((3, timesteps))
+        L_l = np.empty((3, timesteps))
+        t_l = np.empty(timesteps)
+        G_l = np.empty(timesteps)
+        Z_d_l = np.empty((3, timesteps))
+        s_l = np.empty((6, timesteps))
 
-        # Control & other
-        h_l = np.empty((3, timesteps)) # angular velocity of wheels
-        L_l = np.empty((3, timesteps)) # control torque
-        t_l = np.empty(timesteps) # time
-        G_l = np.empty(timesteps) # scalar pointing error
-        Z_d_l = np.empty((3, timesteps)) # pointing error vector components
-        s_l = np.empty((6, timesteps)) # standard deviation of attitude error vector and bias error, both 3 components each
-
-        ## Copy initial states to current value ____________________________________________________________________________________
         q_t = self.q_t_0.copy()
         B_t = self.B_t_0.copy()
         B_h = self.B_h_0.copy()
         w_t = self.w_t_0.copy()
+        w_h = w_t - B_h  # Initialize w_h consistent with the initial estimate
         q_h = q_h_0.copy()
-        q_d = k.quat_mul(q_t, u.quat_inv(q_h))
+        q_d = k.quat_mul(q_t, qm.quat_inv(q_h))
         Z_d = k.quat_to_rotvec(q_d)
-        L = np.zeros(3) # zero initial control torque
-        h = np.zeros(3) # zero initial wheel angular momentum
+        L = np.zeros(3)
+        h = np.zeros(3)
         G = np.linalg.norm(Z_d)
         P = np.block([[self.Pq, O3], [O3, self.Pb]])
 
-        # Initial log at t=0
-        if 0 in idx_all and k < timesteps:
-            s = np.sqrt(np.diag(P))
-            s_l[:, 0] = s
-            t_l[0] = times[0]
-            q_h_l[:, 0] = q_h
-            q_t_l[:, 0] = q_t
-            Z_d_l[:, 0] = Z_d
-            B_h_l[:, 0] = B_h.flatten()
-            B_t_l[:, 0] = B_t
-            h_l[:,0] = h
-            G_l[:,0] = G
-            L_l[:,0] = L
+        log_index = 0
+        if idx_all and idx_all[0] == 0:
+            s_l[:, log_index] = np.sqrt(np.diag(P))
+            t_l[log_index] = 0.0
+            q_h_l[:, log_index] = q_h
+            q_t_l[:, log_index] = q_t
+            Z_d_l[:, log_index] = Z_d
+            B_h_l[:, log_index] = B_h.flatten()
+            B_t_l[:, log_index] = B_t
+            w_h_l[:, log_index] = w_t
+            w_t_l[:, log_index] = w_t
+            h_l[:, log_index] = h
+            L_l[:, log_index] = L
+            G_l[log_index] = G
+            log_index += 1
 
-        # Calculate for the rest of the timesteps
-        k = 1 # k=0 is the initial "measurement" time, which was assigned above
         for i in range(1, len(times)):
-            # Propagate ground truth
-            y = np.concatenate(w_t, h)
-            w_t = int_step(state_deriv_kalman, y, dt_t, J, Ji, L, kp, kd, qc, q_t)
-            q_t = k.quat_propagate(q_t, w_t, self.dt_t)
-            B_t = B_t + np.random.normal(0, self.sigma_u * self.dt_t**0.5, n)
+            y = np.hstack((w_t, h))
+            y_next, _, _ = int_step(state_deriv_kalman, y, self.dt_truth, self.J, self.Ji, L)
+            w_t = y_next[:3]
+            h = y_next[3:]
+            q_t = k.quat_propagate(q_t, w_t, self.dt_truth)
+            B_t = B_t + np.random.normal(0.0, self.sigma_u * self.dt_truth ** 0.5, n)
 
-            # Prediction on gyro event
             if i in idx_gyro:
-                w_m = w_t + B_t + np.random.standard_normal(n) * (self.sigma_v / np.sqrt(dt_g)) #  angular velocity true measurement
-                w_h = w_m - B_h # angular velocity estimate update
-                Phi = k.Phi(dt_g, w_h, I3, self.simple_Phi) # calculate transition matrix
-                Qk = k.Q(self.sigma_v, self.sigma_u, dt_g, I3) #
-                P = k.P_prop(P, Phi, Qk) # udpate covariance matrix
-                q_h = k.quat_propagate(q_h, w_h, dt_g) # propagate estimate of the attitude 
+                w_m = w_t + B_t + np.random.standard_normal(n) * (self.sigma_v / np.sqrt(self.dt_gyro))
+                w_h = w_m - B_h
+                Phi = k.Phi(self.dt_gyro, w_h, I3, self.simple_Phi)
+                Qk = k.Q(self.sigma_v, self.sigma_u, self.dt_gyro, I3)
+                P = k.P_prop(P, Phi, Qk)
+                q_h = k.quat_propagate(q_h, w_h, self.dt_gyro)
 
-            # Update on star tracker event
             if i in idx_star:
-                dZ_m = k.startracker_meas(q_t, q_h, self.sigma_startracker * arcsec_to_rad, n) # synthesize error vector with startracker accuracy
-                K, K_Z, K_B = k.K(P, H, R) # compute kalman gain
-                P = k.P_meas(K, H, P, R, self.Joseph) # update the covariance matrix
-                dB_h = K_B @ dZ_m # calculate estimate of error in bias
-                dZ_h = K_Z @ dZ_m # calculate estimate of error vector 
-                B_h = B_h + dB_h # inject error in bias into global bias estimate
+                dZ_m = k.startracker_meas(q_t, q_h, self.sigma_startracker * ARCSEC_TO_RAD, n)
+                K, K_Z, K_B = k.K(P, H, R)
+                P = k.P_meas(K, H, P, R, self.Joseph)
+                dB_h = K_B @ dZ_m
+                dZ_h = K_Z @ dZ_m
+                B_h = B_h + dB_h
+                w_h = w_h - dB_h  # Correct w_h with the bias update
 
-                # Inject error vector estimate into global quaternion estimate
                 theta = np.linalg.norm(dZ_h)
                 if theta > 0:
                     axis = dZ_h / theta
@@ -224,42 +275,49 @@ class Plant:
                 q_h = k.quat_mul(dq_err, q_h)
                 q_h = q_h / np.linalg.norm(q_h)
 
-                # Calculate true errors in attitude
                 q_d = k.quat_mul(q_t, k.quat_inv(q_h))
                 Z_d = k.quat_to_rotvec(q_d)
-                G = np.linalg.norm(Z_d) # obtain the pointing error
+                G = np.linalg.norm(Z_d)
 
-            # Update control law
             if i in idx_ctrl:
-                L = control_laws(w_h, q_h, qc, control_type, kp, kd)
-                # to add: max torque, min torque, don't update if within the error of the wheels, etc
+                L = control_laws(w_h, q_h, qc_arr, ct_int, kp_val, kd_val)
 
-            # Log at measurement events / control law updates
-            if i in idx_all and k < timesteps:
-                s = np.sqrt(np.diag(P))
-                s_l[:, k] = s
-                t_l[k] = times[i]
-                G_l[k] = G
-                q_h_l[:, k] = q_h
-                q_t_l[:, k] = q_t
-                Z_d_l[:, k] = Z_d
-                B_h_l[:, k] = B_h.flatten()
-                B_t_l[:, k] = B_t
-                k += 1
+            if i in idx_all:
+                if not i in idx_gyro:
+                    w_h = w_t + B_t - B_h # If no gyro measurement, estimate w_h from truth
+                if log_index >= timesteps:
+                    continue
+                s_l[:, log_index] = np.sqrt(np.diag(P))
+                t_l[log_index] = times[i]
+                G_l[log_index] = G
+                q_h_l[:, log_index] = q_h
+                q_t_l[:, log_index] = q_t
+                Z_d_l[:, log_index] = Z_d
+                B_h_l[:, log_index] = B_h.flatten()
+                B_t_l[:, log_index] = B_t
+                w_h_l[:, log_index] = w_h
+                w_t_l[:, log_index] = w_t
+                h_l[:, log_index] = h
+                L_l[:, log_index] = L
+                log_index += 1
 
-        B_d = B_t_l - B_h_l
-
-        self.results = {
-            "t": t_l,
-            "G": G_l,
-            "q_h": q_h_l,
-            "q_t": q_t_l,
-            "Z_d": Z_d_l,
-            "B_h": B_h_l,
-            "B_t": B_t_l,
-            "B_d": B_d,
-            "s": s_l,
+        return {
+            "t": t_l[:log_index],
+            "G": G_l[:log_index],
+            "q_h": q_h_l[:, :log_index],
+            "q_t": q_t_l[:, :log_index],
+            "Z_d": Z_d_l[:, :log_index],
+            "B_h": B_h_l[:, :log_index],
+            "B_t": B_t_l[:, :log_index],
+            "B_d": (B_t_l - B_h_l)[:, :log_index],
+            "s": s_l[:, :log_index],
+            "w_h": w_h_l[:, :log_index],
+            "w_t": w_t_l[:, :log_index],
+            "h": h_l[:, :log_index],
+            "L": L_l[:, :log_index],
         }
+
+    # endregion
 
 
 

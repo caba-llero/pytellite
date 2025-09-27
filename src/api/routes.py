@@ -139,6 +139,7 @@ async def api_defaults():
             "kd": cfg.get("control", {}).get("kd", 0.0),
             "qc": cfg.get("control", {}).get("qc", [0.0, 0.0, 0.0, 1.0]),
         },
+        "estimation": cfg.get("estimation", {}),
     }
 
 @router.get("/api/presets")
@@ -208,7 +209,7 @@ def merge_with_defaults(payload: dict) -> dict:
         cfg["simulation"]["atol"] = atol
 
     # Control parameters (flat or nested)
-    ctrl_payload = payload.get("control", {}) if isinstance(payload.get("control"), dict) else payload
+    ctrl_payload = payload.get("control") if isinstance(payload.get("control"), dict) else payload
     
     control_type = ctrl_payload.get("control_type") or ctrl_payload.get("ctrl")
     kp = ctrl_payload.get("kp")
@@ -235,6 +236,14 @@ def merge_with_defaults(payload: dict) -> dict:
         cfg.setdefault("control", {})["kd"] = float(kd)
     if qc is not None:
         cfg.setdefault("control", {})["qc"] = qc
+
+    # Estimation parameters (flat or nested) override defaults when provided
+    estimation_payload = payload.get("estimation") if isinstance(payload.get("estimation"), dict) else None
+    if estimation_payload:
+        cfg.setdefault("estimation", {})
+        for key, value in estimation_payload.items():
+            if value is not None:
+                cfg["estimation"][key] = value
     return cfg
 
 
@@ -263,14 +272,15 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
         playback_speed = float(sim.get("playback_speed", 1.0))
         sample_rate = float(sim.get("sample_rate", 30.0))
         
-        # Control
         ctrl = sim_config.get("control", {})
         control_type = ctrl.get("control_type")
         kp = float(ctrl.get("kp", 0.0))
         kd = float(ctrl.get("kd", 0.0))
         qc_list = ctrl.get("qc")
 
-        # Prepare arguments for compute_states
+        estimation_cfg = sim_config.get("estimation", {})
+        estimation_enabled = bool(estimation_cfg.get("enable_estimation", False))
+
         args = {"t_max": t_max, "rtol": rtol, "atol": atol}
         if control_type is not None and qc_list:
             args["control_type"] = control_type
@@ -279,9 +289,25 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             args["qc"] = np.array(qc_list, dtype=float)
 
         t0 = time.perf_counter()
-        t, y = plant.compute_states(**args)
+        solver_bytes = 0
+        if not estimation_enabled:
+            t, y = plant.compute_states(**args)
+            q_truth = y[9:13]
+            w_truth = y[6:9]
+            h_truth = y[13:16]
+            solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
+        else:
+            logs = plant.compute_states_kalman(**args)
+            t = logs["t"]
+            q_truth = logs["q_t"]
+            w_truth = logs["w_t"]
+            h_truth = logs.get("h") if "h" in logs else np.zeros_like(q_truth[:3])
+        solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(q_truth, 'nbytes', 0) + getattr(w_truth, 'nbytes', 0))
+
         t_compute = time.perf_counter() - t0
-        t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+        rv_stack = np.vstack((np.repeat(plant.r0.reshape(3, 1), t.shape[0], axis=1), np.repeat(plant.v0.reshape(3, 1), t.shape[0], axis=1)))
+        y_truth = np.vstack((rv_stack, w_truth, q_truth, h_truth))
+        t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y_truth, playback_speed=playback_speed, sample_rate=sample_rate)
         # Quaternion components (scalar last): qx, qy, qz, qw
         qx_arr = q_s[0, :].tolist()
         qy_arr = q_s[1, :].tolist()
@@ -320,8 +346,6 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
         }
         # Metrics
         num_steps = int(t.shape[0])
-        # Low-overhead memory proxy: raw solver arrays size (pre-JSON)
-        solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
         time_per_step = (t_compute / num_steps) if num_steps > 0 else 0.0
         metrics = {
             "compute_time_s": t_compute,
@@ -330,7 +354,22 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             "solver_state_size_bytes": solver_bytes,
             "solver_state_size_readable": _bytes_human(solver_bytes),
         }
-        return {"dataset": dataset, "metrics": metrics}
+        response = {"dataset": dataset, "metrics": metrics}
+        if estimation_enabled and logs is not None:
+            response["errors"] = {
+                "time": logs["t"].tolist(),
+                "Zdx": logs["Z_d"][0].tolist(),
+                "Zdy": logs["Z_d"][1].tolist(),
+                "Zdz": logs["Z_d"][2].tolist(),
+                "Bdx": logs["B_d"][0].tolist(),
+                "Bdy": logs["B_d"][1].tolist(),
+                "Bdz": logs["B_d"][2].tolist(),
+                "wErrX": (logs["w_t"][0] - logs["w_h"][0]).tolist(),
+                "wErrY": (logs["w_t"][1] - logs["w_h"][1]).tolist(),
+                "wErrZ": (logs["w_t"][2] - logs["w_h"][2]).tolist(),
+                "sigma": logs["s"].tolist(),
+            }
+        return response
     except Exception as e:
         logging.error(traceback.format_exc())
         return {"error": str(e)}
@@ -403,10 +442,30 @@ async def websocket_endpoint(websocket: WebSocket):
                 args["kd"] = kd
                 args["qc"] = np.array(qc_list, dtype=float)
 
+            estimation_cfg = sim_config.get("estimation", {})
+            estimation_enabled = bool(estimation_cfg.get("enable_estimation", False))
+
             t0 = time.perf_counter()
-            t, y = plant.compute_states(**args)
+            if estimation_enabled:
+                logs = plant.compute_states_kalman(**args)
+                t = logs["t"]
+                q_truth = logs["q_t"]
+                w_truth = logs["w_t"]
+                h_truth = logs.get("h") if "h" in logs else np.zeros_like(q_truth[:3])
+            else:
+                logs = None
+                t, y = plant.compute_states(**args)
+                q_truth = y[9:13]
+                w_truth = y[6:9]
+                h_truth = y[13:16]
             t_compute = time.perf_counter() - t0
-            t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+
+            if not estimation_enabled:
+                t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+            else:
+                rv_stack = np.vstack((np.repeat(plant.r0.reshape(3, 1), t.shape[0], axis=1), np.repeat(plant.v0.reshape(3, 1), t.shape[0], axis=1)))
+                y_truth = np.vstack((rv_stack, w_truth, q_truth, h_truth))
+                t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y_truth, playback_speed=playback_speed, sample_rate=sample_rate)
             # Quaternion components (scalar last): qx, qy, qz, qw
             qx_arr = q_s[0, :].tolist()
             qy_arr = q_s[1, :].tolist()
@@ -443,7 +502,10 @@ async def websocket_endpoint(websocket: WebSocket):
             }
             # Metrics
             num_steps = int(t.shape[0])
-            solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
+            if estimation_enabled:
+                solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(q_truth, 'nbytes', 0) + getattr(w_truth, 'nbytes', 0))
+            else:
+                solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
             time_per_step = (t_compute / num_steps) if num_steps > 0 else 0.0
             metrics = {
                 "compute_time_s": t_compute,
@@ -452,7 +514,22 @@ async def websocket_endpoint(websocket: WebSocket):
                 "solver_state_size_bytes": solver_bytes,
                 "solver_state_size_readable": _bytes_human(solver_bytes),
             }
-            await websocket.send_text(json.dumps({"dataset": dataset, "metrics": metrics}))
+            response = {"dataset": dataset, "metrics": metrics}
+            if estimation_enabled and logs is not None:
+                response["errors"] = {
+                    "time": logs["t"].tolist(),
+                    "Zdx": logs["Z_d"][0].tolist(),
+                    "Zdy": logs["Z_d"][1].tolist(),
+                    "Zdz": logs["Z_d"][2].tolist(),
+                    "Bdx": logs["B_d"][0].tolist(),
+                    "Bdy": logs["B_d"][1].tolist(),
+                    "Bdz": logs["B_d"][2].tolist(),
+                    "wErrX": (logs["w_t"][0] - logs["w_h"][0]).tolist(),
+                    "wErrY": (logs["w_t"][1] - logs["w_h"][1]).tolist(),
+                    "wErrZ": (logs["w_t"][2] - logs["w_h"][2]).tolist(),
+                    "sigma": logs["s"].tolist(),
+                }
+            await websocket.send_text(json.dumps(response))
         except Exception as e:
             logging.error(traceback.format_exc())
             await websocket.send_text(json.dumps({"error": str(e)}))
