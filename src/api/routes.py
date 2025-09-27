@@ -110,6 +110,41 @@ def _load_defaults() -> dict:
         return yaml.safe_load(f)
 
 
+def _resample_log_series(time_src: np.ndarray, series: np.ndarray, t_target: np.ndarray) -> np.ndarray:
+    """Resample a 1-D or 2-D time series to target timestamps via interpolation."""
+    series_arr = np.asarray(series)
+    if series_arr.ndim == 1:
+        return np.interp(t_target, time_src, series_arr)
+    if series_arr.ndim == 2:
+        return np.vstack([np.interp(t_target, time_src, row) for row in series_arr])
+    raise ValueError("Unsupported series dimensionality for resampling")
+
+
+def _build_error_payload(logs: dict[str, np.ndarray], sample_times: np.ndarray) -> dict[str, list]:
+    """Down-sample estimator logs so the frontend receives data aligned with playback samples."""
+    time_src = np.asarray(logs["t"])
+    t_target = np.asarray(sample_times)
+
+    Z_sampled = _resample_log_series(time_src, logs["Z_d"], t_target)
+    B_sampled = _resample_log_series(time_src, logs["B_d"], t_target)
+    w_err_sampled = _resample_log_series(time_src, logs["w_t"] - logs["w_h"], t_target)
+    sigma_sampled = _resample_log_series(time_src, logs["s"], t_target)
+
+    return {
+        "time": t_target.tolist(),
+        "Zdx": Z_sampled[0].tolist(),
+        "Zdy": Z_sampled[1].tolist(),
+        "Zdz": Z_sampled[2].tolist(),
+        "Bdx": B_sampled[0].tolist(),
+        "Bdy": B_sampled[1].tolist(),
+        "Bdz": B_sampled[2].tolist(),
+        "wErrX": w_err_sampled[0].tolist(),
+        "wErrY": w_err_sampled[1].tolist(),
+        "wErrZ": w_err_sampled[2].tolist(),
+        "sigma": sigma_sampled.tolist(),
+    }
+
+
 @router.get("/api/defaults")
 async def api_defaults():
     cfg = _load_defaults()
@@ -356,19 +391,7 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
         }
         response = {"dataset": dataset, "metrics": metrics}
         if estimation_enabled and logs is not None:
-            response["errors"] = {
-                "time": logs["t"].tolist(),
-                "Zdx": logs["Z_d"][0].tolist(),
-                "Zdy": logs["Z_d"][1].tolist(),
-                "Zdz": logs["Z_d"][2].tolist(),
-                "Bdx": logs["B_d"][0].tolist(),
-                "Bdy": logs["B_d"][1].tolist(),
-                "Bdz": logs["B_d"][2].tolist(),
-                "wErrX": (logs["w_t"][0] - logs["w_h"][0]).tolist(),
-                "wErrY": (logs["w_t"][1] - logs["w_h"][1]).tolist(),
-                "wErrZ": (logs["w_t"][2] - logs["w_h"][2]).tolist(),
-                "sigma": logs["s"].tolist(),
-            }
+            response["errors"] = _build_error_payload(logs, t_s)
         return response
     except Exception as e:
         logging.error(traceback.format_exc())
@@ -516,19 +539,7 @@ async def websocket_endpoint(websocket: WebSocket):
             }
             response = {"dataset": dataset, "metrics": metrics}
             if estimation_enabled and logs is not None:
-                response["errors"] = {
-                    "time": logs["t"].tolist(),
-                    "Zdx": logs["Z_d"][0].tolist(),
-                    "Zdy": logs["Z_d"][1].tolist(),
-                    "Zdz": logs["Z_d"][2].tolist(),
-                    "Bdx": logs["B_d"][0].tolist(),
-                    "Bdy": logs["B_d"][1].tolist(),
-                    "Bdz": logs["B_d"][2].tolist(),
-                    "wErrX": (logs["w_t"][0] - logs["w_h"][0]).tolist(),
-                    "wErrY": (logs["w_t"][1] - logs["w_h"][1]).tolist(),
-                    "wErrZ": (logs["w_t"][2] - logs["w_h"][2]).tolist(),
-                    "sigma": logs["s"].tolist(),
-                }
+                response["errors"] = _build_error_payload(logs, t_s)
             await websocket.send_text(json.dumps(response))
         except Exception as e:
             logging.error(traceback.format_exc())

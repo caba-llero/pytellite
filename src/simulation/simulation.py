@@ -13,7 +13,7 @@ from ..math.integration import rk45_step_autonomous as int_step
 from ..math.quaternion import slerp_quat_array
 from . import kalman as k
 from .control import control_laws
-from .dynamics import state_deriv, state_deriv_kalman
+from .dynamics import state_deriv, state_deriv_kalman, integrate_ang_vel_rk4, integrate_attitude_quat_mult
 
 
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
@@ -101,18 +101,39 @@ class Plant:
         freq_star = _to_float(cfg.get("star_meas_freq"), 0.0)
         freq_ctrl = _to_float(cfg.get("ctrl_freq"), 0.0)
 
-        self.dt_truth = 1.0 / freq_truth if freq_truth > 0 else 0.01
-        self.dt_gyro = 1.0 / freq_gyro if freq_gyro > 0 else self.dt_truth
-        self.dt_star = 1.0 / freq_star if freq_star > 0 else self.dt_truth
-        self.dt_ctrl = 1.0 / freq_ctrl if freq_ctrl > 0 else self.dt_truth
+        # Preliminary step sizes from provided frequencies
+        dt_truth_cfg = (1.0 / freq_truth) if freq_truth > 0 else None
+        self.dt_gyro = 1.0 / freq_gyro if freq_gyro > 0 else None
+        self.dt_star = 1.0 / freq_star if freq_star > 0 else None
+        self.dt_ctrl = 1.0 / freq_ctrl if freq_ctrl > 0 else None
 
-        self.freq_truth = 1.0 / self.dt_truth
+        # Choose an integration base step that can represent all measurement events
+        dt_candidates = [x for x in (dt_truth_cfg, self.dt_gyro, self.dt_star, self.dt_ctrl) if isinstance(x, float) and x > 0]
+        self.dt_truth = min(dt_candidates) if dt_candidates else 0.01
+
+        # Backfill any missing dt_* with dt_truth so downstream code has a concrete value
+        if self.dt_gyro is None:
+            self.dt_gyro = self.dt_truth
+        if self.dt_star is None:
+            self.dt_star = self.dt_truth
+        if self.dt_ctrl is None:
+            self.dt_ctrl = self.dt_truth
+
+        # Derived frequencies
+        self.freq_truth = 1.0 / self.dt_truth if self.dt_truth > 0 else 0.0
         self.freq_gyro = 1.0 / self.dt_gyro if self.dt_gyro > 0 else 0.0
         self.freq_startracker = 1.0 / self.dt_star if self.dt_star > 0 else 0.0
         self.freq_control = 1.0 / self.dt_ctrl if self.dt_ctrl > 0 else 0.0
 
         self.rng_seed = int(_to_float(cfg.get("rng_seed"), 0.0))
-        self.sigma_startracker = _to_float(cfg.get("star_iso_acc"), 0.0)
+        # Star tracker accuracy: accept either arcseconds (preferred) or radians (auto-detect)
+        sigma_star_in = _to_float(cfg.get("star_iso_acc"), 0.0)
+        # Heuristic: values < 1e-3 are likely radians; convert to arcseconds-equivalent
+        if sigma_star_in > 0.0 and sigma_star_in < 1.0e-3:
+            self.sigma_startracker = sigma_star_in / ARCSEC_TO_RAD
+        else:
+            self.sigma_startracker = sigma_star_in
+        # Initial inaccuracy is a dimensionless multiplier of measurement sigma
         self.init_inaccuracy = _to_float(cfg.get("star_init_acc"), 0.0)
         self.sigma_v = _to_float(cfg.get("gyro_arw"), 0.0)
         self.sigma_u = _to_float(cfg.get("gyro_rrw"), 0.0)
@@ -120,11 +141,12 @@ class Plant:
         bias_true = _to_float(cfg.get("gyro_true_bias"), 0.0)
         bias_est = _to_float(cfg.get("gyro_est_bias"), 0.0)
         bias_init_cov = max(_to_float(cfg.get("gyro_init_cov"), 0.0), 0.0)
-        attitude_init_cov = max(_to_float(cfg.get("attitude_init_cov"), bias_init_cov), 0.0)
+        att_init_cov = max(_to_float(cfg.get("attitude_init_cov"), 0.0), 0.0)
 
         self.B_t_0 = np.full(3, bias_true, dtype=float)
         self.B_h_0 = np.full(3, bias_est, dtype=float)
-        self.Pq = np.eye(3) * attitude_init_cov
+        # Use proper initial covariances per state block
+        self.Pq = np.eye(3) * att_init_cov
         self.Pb = np.eye(3) * bias_init_cov
 
         self.simple_Phi = bool(cfg.get("simple_phi", False))
@@ -184,12 +206,13 @@ class Plant:
         H = np.hstack((I3, O3))
         R = I3 * (self.sigma_startracker * ARCSEC_TO_RAD) ** 2
 
-        times = np.arange(0.0, t_max, self.dt_truth)
+        times = np.arange(0.0, t_max + 1e-12, self.dt_truth)
         idx_gyro = k.measurement_indices(t_max, self.dt_truth, self.freq_gyro)
         idx_star = k.measurement_indices(t_max, self.dt_truth, self.freq_startracker)
         idx_ctrl = k.measurement_indices(t_max, self.dt_truth, self.freq_control)
-        idx_all = sorted(idx_gyro | idx_star | idx_ctrl)
-        timesteps = len(idx_all)
+        n_steps = len(times)
+        if n_steps == 0:
+            raise ValueError("No integration steps generated; check t_max or estimator frequencies.")
 
         n = 3
         np.random.seed(self.rng_seed)
@@ -199,25 +222,25 @@ class Plant:
         q_m_0 = q_m_0.flatten() / np.linalg.norm(q_m_0)
         q_h_0 = q_m_0
 
-        q_h_l = np.empty((4, timesteps))
-        w_h_l = np.empty((3, timesteps))
-        B_h_l = np.empty((3, timesteps))
-        B_t_l = np.empty((3, timesteps))
-        w_t_l = np.empty((3, timesteps))
-        q_t_l = np.empty((4, timesteps))
-        h_l = np.empty((3, timesteps))
-        L_l = np.empty((3, timesteps))
-        t_l = np.empty(timesteps)
-        G_l = np.empty(timesteps)
-        Z_d_l = np.empty((3, timesteps))
-        s_l = np.empty((6, timesteps))
+        q_h_l = np.empty((4, n_steps))
+        w_h_l = np.empty((3, n_steps))
+        B_h_l = np.empty((3, n_steps))
+        B_t_l = np.empty((3, n_steps))
+        w_t_l = np.empty((3, n_steps))
+        q_t_l = np.empty((4, n_steps))
+        h_l = np.empty((3, n_steps))
+        L_l = np.empty((3, n_steps))
+        t_l = np.empty(n_steps)
+        G_l = np.empty(n_steps)
+        Z_d_l = np.empty((3, n_steps))
+        s_l = np.empty((6, n_steps))
 
         q_t = self.q_t_0.copy()
         B_t = self.B_t_0.copy()
         B_h = self.B_h_0.copy()
         w_t = self.w_t_0.copy()
-        w_h = w_t - B_h  # Initialize w_h consistent with the initial estimate
         q_h = q_h_0.copy()
+        w_h = self.w_t_0.copy()
         q_d = k.quat_mul(q_t, qm.quat_inv(q_h))
         Z_d = k.quat_to_rotvec(q_d)
         L = np.zeros(3)
@@ -225,46 +248,35 @@ class Plant:
         G = np.linalg.norm(Z_d)
         P = np.block([[self.Pq, O3], [O3, self.Pb]])
 
-        log_index = 0
-        if idx_all and idx_all[0] == 0:
-            s_l[:, log_index] = np.sqrt(np.diag(P))
-            t_l[log_index] = 0.0
-            q_h_l[:, log_index] = q_h
-            q_t_l[:, log_index] = q_t
-            Z_d_l[:, log_index] = Z_d
-            B_h_l[:, log_index] = B_h.flatten()
-            B_t_l[:, log_index] = B_t
-            w_h_l[:, log_index] = w_t
-            w_t_l[:, log_index] = w_t
-            h_l[:, log_index] = h
-            L_l[:, log_index] = L
-            G_l[log_index] = G
-            log_index += 1
+        last_gyro_i = 0
+        for i in range(n_steps):
+            if i > 0:
+                y = np.hstack((w_t, h))
+                y_prop, _, _ = int_step(state_deriv_kalman, y, self.dt_truth, self.J, self.Ji, L)
+                w_t = y_prop[:3]
+                h = y_prop[3:6]
+                q_t = k.quat_propagate(q_t, w_t, self.dt_truth)
+                B_t = B_t + np.random.normal(0, self.sigma_u * self.dt_truth ** 0.5, n)
 
-        for i in range(1, len(times)):
-            y = np.hstack((w_t, h))
-            y_next, _, _ = int_step(state_deriv_kalman, y, self.dt_truth, self.J, self.Ji, L)
-            w_t = y_next[:3]
-            h = y_next[3:]
-            q_t = k.quat_propagate(q_t, w_t, self.dt_truth)
-            B_t = B_t + np.random.normal(0.0, self.sigma_u * self.dt_truth ** 0.5, n)
-
-            if i in idx_gyro:
-                w_m = w_t + B_t + np.random.standard_normal(n) * (self.sigma_v / np.sqrt(self.dt_gyro))
+            if i > 0 and i in idx_gyro:
+                dt_g = times[i] - times[last_gyro_i]
+                if dt_g <= 0:
+                    dt_g = self.dt_truth
+                w_m = w_t + B_t + np.random.standard_normal(n) * (self.sigma_v / np.sqrt(dt_g))
                 w_h = w_m - B_h
-                Phi = k.Phi(self.dt_gyro, w_h, I3, self.simple_Phi)
-                Qk = k.Q(self.sigma_v, self.sigma_u, self.dt_gyro, I3)
+                Phi = k.Phi(dt_g, w_h, I3, self.simple_Phi)
+                Qk = k.Q(self.sigma_v, self.sigma_u, dt_g, I3)
                 P = k.P_prop(P, Phi, Qk)
-                q_h = k.quat_propagate(q_h, w_h, self.dt_gyro)
+                q_h = k.quat_propagate(q_h, w_h, dt_g)
+                last_gyro_i = i
 
-            if i in idx_star:
+            if i > 0 and i in idx_star:
                 dZ_m = k.startracker_meas(q_t, q_h, self.sigma_startracker * ARCSEC_TO_RAD, n)
                 K, K_Z, K_B = k.K(P, H, R)
                 P = k.P_meas(K, H, P, R, self.Joseph)
                 dB_h = K_B @ dZ_m
                 dZ_h = K_Z @ dZ_m
                 B_h = B_h + dB_h
-                w_h = w_h - dB_h  # Correct w_h with the bias update
 
                 theta = np.linalg.norm(dZ_h)
                 if theta > 0:
@@ -279,42 +291,36 @@ class Plant:
                 Z_d = k.quat_to_rotvec(q_d)
                 G = np.linalg.norm(Z_d)
 
-            if i in idx_ctrl:
+            if i > 0 and i in idx_ctrl:
                 L = control_laws(w_h, q_h, qc_arr, ct_int, kp_val, kd_val)
 
-            if i in idx_all:
-                if not i in idx_gyro:
-                    w_h = w_t + B_t - B_h # If no gyro measurement, estimate w_h from truth
-                if log_index >= timesteps:
-                    continue
-                s_l[:, log_index] = np.sqrt(np.diag(P))
-                t_l[log_index] = times[i]
-                G_l[log_index] = G
-                q_h_l[:, log_index] = q_h
-                q_t_l[:, log_index] = q_t
-                Z_d_l[:, log_index] = Z_d
-                B_h_l[:, log_index] = B_h.flatten()
-                B_t_l[:, log_index] = B_t
-                w_h_l[:, log_index] = w_h
-                w_t_l[:, log_index] = w_t
-                h_l[:, log_index] = h
-                L_l[:, log_index] = L
-                log_index += 1
+            s_l[:, i] = np.sqrt(np.diag(P))
+            t_l[i] = times[i]
+            G_l[i] = G
+            q_h_l[:, i] = q_h
+            q_t_l[:, i] = q_t
+            Z_d_l[:, i] = Z_d
+            B_h_l[:, i] = B_h.flatten()
+            B_t_l[:, i] = B_t
+            w_h_l[:, i] = w_h
+            w_t_l[:, i] = w_t
+            h_l[:, i] = h
+            L_l[:, i] = L
 
         return {
-            "t": t_l[:log_index],
-            "G": G_l[:log_index],
-            "q_h": q_h_l[:, :log_index],
-            "q_t": q_t_l[:, :log_index],
-            "Z_d": Z_d_l[:, :log_index],
-            "B_h": B_h_l[:, :log_index],
-            "B_t": B_t_l[:, :log_index],
-            "B_d": (B_t_l - B_h_l)[:, :log_index],
-            "s": s_l[:, :log_index],
-            "w_h": w_h_l[:, :log_index],
-            "w_t": w_t_l[:, :log_index],
-            "h": h_l[:, :log_index],
-            "L": L_l[:, :log_index],
+            "t": t_l,
+            "G": G_l,
+            "q_h": q_h_l,
+            "q_t": q_t_l,
+            "Z_d": Z_d_l,
+            "B_h": B_h_l,
+            "B_t": B_t_l,
+            "B_d": B_t_l - B_h_l,
+            "s": s_l,
+            "w_h": w_h_l,
+            "w_t": w_t_l,
+            "h": h_l,
+            "L": L_l,
         }
 
     # endregion
