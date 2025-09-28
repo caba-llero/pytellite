@@ -137,10 +137,6 @@ body {
     min-height: 0;
 }
 #info { display: none; }
-#legend {
-    margin-top: 10px;
-    font-size: 12px;
-}
 .legend-section {
     display: flex;
     align-items: center;
@@ -182,6 +178,45 @@ body {
 .legend-color.z { background-color: #0000ff; }
 .legend-axis-label { margin-right: 8px; color: #ddd; }
 .legend-note { color: #aeb6c2; font-size: 11px; margin-top: 6px; }
+
+.floating-legend {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    max-width: 220px;
+    padding: 12px 14px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    font-size: 12px;
+    z-index: 4;
+}
+
+.legend-content {
+    margin-bottom: 8px;
+}
+
+.legend-instructions {
+    font-size: 11px;
+    color: #cfd8e3;
+    opacity: 0.85;
+    margin-top: 4px;
+}
+
+
+.orbit-status {
+    position: absolute;
+    top: 24px;
+    left: 24px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 8px;
+    color: #f0c674;
+    font-size: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    z-index: 4;
+}
 
 /* Modern player controls at bottom center */
 .player-controls {

@@ -24,49 +24,37 @@
         <div id="left-panel">
             <div id="logo-row">
                 <img src="/logo.png" alt="Logo" id="site-logo">
-                <button id="config-btn" class="config-btn" type="button">Change configuration</button>
+                <button id="config-btn" class="config-btn" type="button">Change config</button>
             </div>
             <div id="view-toggle" class="view-toggle" role="group" aria-label="View toggle">
                 <button class="toggle-segment active" data-view="attitude" aria-pressed="true">Attitude</button>
                 <button class="toggle-segment" data-view="orbit" aria-pressed="false">Orbit</button>
             </div>
             <div class="tabs" role="tablist">
-                <button class="tab active" data-tab="legend" role="tab" aria-selected="true">Legend</button>
-                <button class="tab" data-tab="units" role="tab" aria-selected="false">Units</button>
+                <button class="tab active" data-tab="units" role="tab" aria-selected="true">Units</button>
                 <button class="tab" data-tab="plots" role="tab" aria-selected="false">Plots</button>
-                <button class="tab" data-tab="axes" role="tab" aria-selected="false">Axes</button>
                 <button class="tab" data-tab="other" role="tab" aria-selected="false">Other</button>
             </div>
             <div class="panels">
-                <section class="tab-panel active" data-tab="legend" role="tabpanel">
-                    <div id="legend">
-                        <div class="legend-section">
-                            <span class="legend-line solid"></span>
-                            <span class="legend-text">Inertial axes</span>
-                        </div>
-                        <div class="legend-section">
-                            <span class="legend-line dashed"></span>
-                            <span class="legend-text">Body axes</span>
-                        </div>
-                        <div class="legend-section legend-colors">
-                            <span class="legend-color x"></span><span class="legend-axis-label">X</span>
-                            <span class="legend-color y"></span><span class="legend-axis-label">Y</span>
-                            <span class="legend-color z"></span><span class="legend-axis-label">Z</span>
-                        </div>
-                    </div>
-                </section>
-                <section class="tab-panel" data-tab="units" role="tabpanel">
+                <section class="tab-panel active" data-tab="units" role="tabpanel">
                     <div class="unit-selectors">
-                        <label for="timeUnitSelect">Time axis</label>
+                        <label for="timeUnitSelect">Time</label>
                         <select id="timeUnitSelect">
                             <option value="s" selected>seconds</option>
                             <option value="m">minutes</option>
                             <option value="h">hours</option>
                         </select>
+                        <label for="angleUnitSelect">Angle</label>
+                        <select id="angleUnitSelect">
+                            <option value="rad" selected>rad</option>
+                            <option value="deg">degree</option>
+                        </select>
                         <label for="omegaUnitSelect">Angular velocity</label>
                         <select id="omegaUnitSelect">
                             <option value="rad" selected>rad/s</option>
                             <option value="deg">deg/s</option>
+                            <option value="rad_h">rad/h</option>
+                            <option value="deg_h">deg/h</option>
                         </select>
                     </div>
                 </section>
@@ -81,9 +69,7 @@
                             <span>Estimate errors</span>
                         </label>
                     </div>
-                    <div class="plot-mode-hint">Switch between telemetry and estimator diagnostics.</div>
                 </section>
-                <section class="tab-panel" data-tab="axes" role="tabpanel"></section>
                 <section class="tab-panel" data-tab="other" role="tabpanel">
                     <div id="sim-info" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
                     <div id="metrics" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
@@ -92,6 +78,11 @@
         </div>
         <div id="main-vis">
             <div id="renderer-container"></div>
+            <div class="floating-legend" id="floating-legend" aria-live="polite">
+                <div id="legend-content" class="legend-content"></div>
+                <div class="legend-instructions">Rotate view and zoom with mouse</div>
+            </div>
+            <div id="orbit-status" class="orbit-status" hidden>Orbit functionality under construction</div>
             <div id="playerControls" class="player-controls">
                 <button id="playPauseBtn" class="play-pause-btn" aria-label="Play/Pause">
                     <svg class="icon icon-play" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">

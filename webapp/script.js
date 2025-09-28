@@ -2,7 +2,7 @@
 const metricsDiv = document.getElementById('metrics');
 const simInfoDiv = document.getElementById('sim-info');
 const configBtn = document.getElementById('config-btn');
-const legendDiv = document.getElementById('legend');
+const legendOverlay = document.getElementById('legend-content');
 // Simple tabs behavior for left panel
 document.querySelectorAll('#left-panel .tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -25,6 +25,8 @@ const plotModeInputs = document.querySelectorAll('input[name="plotMode"]');
 const groundTruthSection = document.getElementById('groundTruthPlots');
 const errorSection = document.getElementById('errorPlots');
 const errorPlotsUnavailable = document.getElementById('errorPlotsUnavailable');
+const angleUnitSelect = document.getElementById('angleUnitSelect');
+const orbitStatusBanner = document.getElementById('orbit-status');
 
 let currentPlotMode = 'ground_truth';
 let requestedPlotMode = 'ground_truth';
@@ -145,9 +147,9 @@ repositionRenderer();
 
 // Legend switching
 function renderLegend(view) {
-    if (!legendDiv) return;
+    if (!legendOverlay) return;
     if (view === 'orbit') {
-        legendDiv.innerHTML = `
+        legendOverlay.innerHTML = `
             <div class="legend-section"><span class="legend-line dashed"></span><span class="legend-text">Spacecraft body axes</span></div>
             <div class="legend-section"><span class="legend-line solid"></span><span class="legend-text">Earth Centered Inertial</span></div>
             <div class="legend-section"><span class="legend-line dashdot"></span><span class="legend-text">Earth Centered Earth Fixed</span></div>
@@ -159,7 +161,7 @@ function renderLegend(view) {
             <div class="legend-note">Vernal equinox: X on the ECI frame</div>
         `;
     } else {
-        legendDiv.innerHTML = `
+        legendOverlay.innerHTML = `
             <div class="legend-section"><span class="legend-line solid"></span><span class="legend-text">Inertial axes</span></div>
             <div class="legend-section"><span class="legend-line dashed"></span><span class="legend-text">Body axes</span></div>
             <div class="legend-section legend-colors">
@@ -208,13 +210,24 @@ function setPlotMode(mode, { syncRadios = true, refresh = true, persistRequest =
     if (normalized === 'estimate_errors') {
         const dataAvailable = hasErrorData();
         if (errorSection) errorSection.classList.toggle('no-data', !dataAvailable);
-        if (errorPlotsUnavailable) errorPlotsUnavailable.classList.toggle('hidden', dataAvailable);
+        if (errorPlotsUnavailable) {
+            if (dataAvailable) {
+                errorPlotsUnavailable.classList.add('hidden');
+                errorPlotsUnavailable.setAttribute('aria-hidden', 'true');
+            } else {
+                errorPlotsUnavailable.classList.remove('hidden');
+                errorPlotsUnavailable.removeAttribute('aria-hidden');
+            }
+        }
         if (dataAvailable) {
             redrawErrorPlots(frameIndex);
         }
     } else {
         if (errorSection) errorSection.classList.remove('no-data');
-        if (errorPlotsUnavailable) errorPlotsUnavailable.classList.add('hidden');
+        if (errorPlotsUnavailable) {
+            errorPlotsUnavailable.classList.add('hidden');
+            errorPlotsUnavailable.setAttribute('aria-hidden', 'true');
+        }
         rebuildSeriesUpTo(frameIndex);
     }
 }
@@ -247,11 +260,6 @@ function getOmegaFactor() {
     return unit === 'deg' ? (180/Math.PI) : 1;
 }
 
-function getOmegaUnitLabel() {
-    const unit = (omegaUnitSelect && omegaUnitSelect.value) || 'rad';
-    return unit === 'deg' ? 'deg/s' : 'rad/s';
-}
-
 function createMultiTraceChart(divId, yAxisTitle, traces) {
     try {
     if (typeof Plotly === 'undefined') return;
@@ -266,7 +274,7 @@ function createMultiTraceChart(divId, yAxisTitle, traces) {
                 automargin: true,
                 title: { text: yAxisTitle, font: { color: 'white', size: 12 }, standoff: 12 }
             },
-            legend: { font: { color: 'white' } }
+            showlegend: false
         };
         Plotly.newPlot(divId, data, layout, { responsive: true });
     } catch (e) {
@@ -315,8 +323,6 @@ function redrawErrorPlots(index) {
     const tf = getTimeFactor();
     const rawTimes = estimatorTimes.slice(0, i + 1).map(t => Number(t ?? 0));
     const timeSlice = rawTimes.map(t => t * tf);
-    const xAxisTitle = `Time (${getTimeUnitLabel()})`;
-
     const plotError = (plotId, components, sigmaIndices, yAxisTitle, valueTransform = (x) => x) => {
         const traces = [];
         components.forEach((comp) => {
@@ -369,9 +375,9 @@ function redrawErrorPlots(index) {
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
             margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
-            xaxis: { color: 'white', gridcolor: '#222', title: { text: xAxisTitle, font: { color: 'white', size: 12 } } },
+            xaxis: { color: 'white', gridcolor: '#222' },
             yaxis: { color: 'white', gridcolor: '#222', automargin: true, title: { text: yAxisTitle, font: { color: 'white', size: 12 } } },
-            legend: { font: { color: 'white' } }
+            showlegend: false
         };
         Plotly.react(plotId, traces, layout, { responsive: true });
     };
@@ -380,19 +386,19 @@ function redrawErrorPlots(index) {
         { key: 'Zdx', color: '#ff0000', label: 'Z_d,x' },
         { key: 'Zdy', color: '#00ff00', label: 'Z_d,y' },
         { key: 'Zdz', color: '#0000ff', label: 'Z_d,z' }
-    ], [0, 1, 2], 'Error rotation vector (rad)');
+    ], [0, 1, 2], 'Error rotation vector');
 
     plotError('biasErrPlot', [
         { key: 'Bdx', color: '#ff0000', label: 'B_d,x' },
         { key: 'Bdy', color: '#00ff00', label: 'B_d,y' },
         { key: 'Bdz', color: '#0000ff', label: 'B_d,z' }
-    ], [3, 4, 5], `Gyro bias error (${getOmegaUnitLabel()})`, (v) => v * getOmegaFactor());
+    ], [3, 4, 5], 'Gyro bias error', (v) => v * getOmegaFactor());
 
     plotError('wErrPlot', [
         { key: 'wErrX', color: '#ff0000', label: 'ω error x' },
         { key: 'wErrY', color: '#00ff00', label: 'ω error y' },
         { key: 'wErrZ', color: '#0000ff', label: 'ω error z' }
-    ], null, `Angular velocity error (${getOmegaUnitLabel()})`, (v) => v * getOmegaFactor());
+    ], null, 'Angular velocity error', (v) => v * getOmegaFactor());
 }
 
 // WebSocket & Controls
@@ -764,6 +770,9 @@ if (configBtn) {
     const viewToggle = document.getElementById('view-toggle');
     if (!viewToggle) return;
     const buttons = viewToggle.querySelectorAll('.toggle-segment');
+    if (orbitStatusBanner) {
+        orbitStatusBanner.setAttribute('hidden', 'true');
+    }
     buttons.forEach(btn => {
         btn.addEventListener('click', () => {
             buttons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
@@ -772,7 +781,13 @@ if (configBtn) {
             const view = btn.getAttribute('data-view');
             if (view === 'orbit' || view === 'attitude') {
                 currentView = view;
-                // Reset camera/controls target to origin for both views
+                if (orbitStatusBanner) {
+                    if (view === 'orbit') {
+                        orbitStatusBanner.removeAttribute('hidden');
+                    } else {
+                        orbitStatusBanner.setAttribute('hidden', 'true');
+                    }
+                }
                 camera.position.set(4, 4, 4);
                 controls.target.set(0, 0, 0);
                 controls.update();
