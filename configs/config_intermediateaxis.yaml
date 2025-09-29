@@ -61,7 +61,8 @@ control:
   qc: [0.0, 0.0, 0.0, 1.0]
 
 estimation:
-  enable_estimation: true
+  enable_estimation: false
+  rng_seed: 42
   gt_freq: 1.0
   gyro_meas_freq: 100.0
   star_meas_freq: 1.0

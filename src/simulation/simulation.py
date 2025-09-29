@@ -141,6 +141,7 @@ def _compute_states_kalman_kernel(
     np.ndarray,
     np.ndarray,
     np.ndarray,
+    np.ndarray,
 ]:
     """Numba-accelerated core integrator for `compute_states_kalman`."""
 
@@ -157,6 +158,7 @@ def _compute_states_kalman_kernel(
     L_l = np.empty((3, n_steps))
     t_l = np.empty(n_steps)
     G_l = np.empty(n_steps)
+    G_s_l = np.empty(n_steps)
     Z_d_l = np.empty((3, n_steps))
     s_l = np.empty((6, n_steps))
 
@@ -190,6 +192,7 @@ def _compute_states_kalman_kernel(
     q_d = k.quat_mul(q_t, qm.quat_inv(q_h))
     Z_d = k.quat_to_rotvec(q_d)
     G = np.linalg.norm(Z_d)
+    G_s = 0.0
 
     last_gyro_i = 0
 
@@ -248,6 +251,25 @@ def _compute_states_kalman_kernel(
             Z_d = k.quat_to_rotvec(q_d)
             G = np.linalg.norm(Z_d)
 
+            if G > 1.0e-12:
+                inv_G = 1.0 / G
+                scaled0 = Z_d[0] * inv_G
+                scaled1 = Z_d[1] * inv_G
+                scaled2 = Z_d[2] * inv_G
+                var_G = (
+                    scaled0 * (P[0, 0] * scaled0 + P[0, 1] * scaled1 + P[0, 2] * scaled2)
+                    + scaled1 * (P[1, 0] * scaled0 + P[1, 1] * scaled1 + P[1, 2] * scaled2)
+                    + scaled2 * (P[2, 0] * scaled0 + P[2, 1] * scaled1 + P[2, 2] * scaled2)
+                )
+                if var_G < 0.0:
+                    var_G = 0.0
+                G_s = np.sqrt(var_G)
+            else:
+                avg_var = (P[0, 0] + P[1, 1] + P[2, 2]) / 3.0
+                if avg_var < 0.0:
+                    avg_var = 0.0
+                G_s = np.sqrt(avg_var)
+
         if i > 0 and ctrl_mask[i] != 0:
             L = control_laws(w_h, q_h, qc_arr, ct_int, kp_val, kd_val)
 
@@ -256,6 +278,7 @@ def _compute_states_kalman_kernel(
 
         t_l[i] = times[i]
         G_l[i] = G
+        G_s_l[i] = G_s
         q_h_l[:, i] = q_h
         q_t_l[:, i] = q_t
         Z_d_l[:, i] = Z_d
@@ -269,6 +292,7 @@ def _compute_states_kalman_kernel(
     return (
         t_l,
         G_l,
+        G_s_l,
         q_h_l,
         q_t_l,
         Z_d_l,
@@ -493,6 +517,7 @@ class Plant:
         L_l = np.empty((3, n_steps))
         t_l = np.empty(n_steps)
         G_l = np.empty(n_steps)
+        G_s_l = np.empty(n_steps)
         Z_d_l = np.empty((3, n_steps))
         s_l = np.empty((6, n_steps))
 
@@ -504,6 +529,7 @@ class Plant:
             (
                 t_l,
                 G_l,
+                G_s_l,
                 q_h_l,
                 q_t_l,
                 Z_d_l,
@@ -547,6 +573,7 @@ class Plant:
             return {
                 "t": t_l,
                 "G": G_l,
+                "G_s": G_s_l,
                 "q_h": q_h_l,
                 "q_t": q_t_l,
                 "Z_d": Z_d_l,
@@ -570,9 +597,10 @@ class Plant:
             L_l = np.empty((3, n_steps))
             t_l = np.empty(n_steps)
             G_l = np.empty(n_steps)
+            G_s_l = np.empty(n_steps)
             Z_d_l = np.empty((3, n_steps))
             s_l = np.empty((6, n_steps))
-
+            
             q_t = self.q_t_0.copy()
             B_t = self.B_t_0.copy()
             B_h = self.B_h_0.copy()
@@ -585,6 +613,7 @@ class Plant:
             L = np.zeros(3)
             h = np.zeros(3)
             G = np.linalg.norm(Z_d)
+            G_s = 0.0
             P = np.block([[self.Pq, O3], [O3, self.Pb]])
 
             last_gyro_i = 0
@@ -631,7 +660,23 @@ class Plant:
 
                     q_d = k.quat_mul(q_t, k.quat_inv(q_h))
                     Z_d = k.quat_to_rotvec(q_d)
+                    s = np.sqrt(np.diag(P))
                     G = np.linalg.norm(Z_d)
+                    if G > 1.0e-12:
+                        inv_G = 1.0 / G
+                        scaled = Z_d * inv_G
+                        var_G = (
+                            scaled[0] * scaled[0] * P[0, 0]
+                            + scaled[1] * scaled[1] * P[1, 1]
+                            + scaled[2] * scaled[2] * P[2, 2]
+                            + 2.0 * (scaled[0] * scaled[1] * P[0, 1] + scaled[0] * scaled[2] * P[0, 2] + scaled[1] * scaled[2] * P[1, 2])
+                        )
+                        var_G = float(max(var_G, 0.0))
+                        G_s = float(np.sqrt(var_G))
+                    else:
+                        avg_var = float((P[0, 0] + P[1, 1] + P[2, 2]) / 3.0)
+                        avg_var = max(avg_var, 0.0)
+                        G_s = float(np.sqrt(avg_var))
 
                 if i > 0 and i in idx_ctrl:
                     L = control_laws(w_h, q_h, qc_arr, ct_int, kp_val, kd_val)
@@ -639,6 +684,7 @@ class Plant:
                 s_l[:, i] = np.sqrt(np.diag(P))
                 t_l[i] = times[i]
                 G_l[i] = G
+                G_s_l[i] = G_s
                 q_h_l[:, i] = q_h
                 q_t_l[:, i] = q_t
                 Z_d_l[:, i] = Z_d
@@ -652,8 +698,10 @@ class Plant:
             return {
                 "t": t_l,
                 "G": G_l,
+                "G_s": G_s_l,
                 "q_h": q_h_l,
                 "q_t": q_t_l,
+                "q_c": np.tile(qc_arr.reshape(-1, 1), (1, n_steps)),  # Control quaternion for each timestep
                 "Z_d": Z_d_l,
                 "B_h": B_h_l,
                 "B_t": B_t_l,

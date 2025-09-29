@@ -6,7 +6,7 @@ simulation:
   rng_seed: 12345
   t_final: 5.0
   # Precomputation defaults for GUI playback
-  t_max: 300.0
+  t_max: 500.0
   playback_speed: 10.0
   sample_rate: 30.0
   rtol: 1.0e-12
@@ -61,7 +61,8 @@ control:
   qc: [0.0, 0.0, 0.0, 1.0]
 
 estimation:
-  enable_estimation: true
+  enable_estimation: false
+  rng_seed: 42
   gt_freq: 100.0
   gyro_meas_freq: 10.0
   star_meas_freq: 2.0

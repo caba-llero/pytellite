@@ -127,8 +127,14 @@ def _build_error_payload(logs: dict[str, np.ndarray], sample_times: np.ndarray) 
 
     Z_sampled = _resample_log_series(time_src, logs["Z_d"], t_target)
     B_sampled = _resample_log_series(time_src, logs["B_d"], t_target)
+    B_true_sampled = _resample_log_series(time_src, logs["B_t"], t_target)  # True gyro bias
     w_err_sampled = _resample_log_series(time_src, logs["w_t"] - logs["w_h"], t_target)
     sigma_sampled = _resample_log_series(time_src, logs["s"], t_target)
+    G_sampled = _resample_log_series(time_src, logs["G"], t_target)
+    if "G_s" in logs:
+        G_sigma_sampled = _resample_log_series(time_src, logs["G_s"], t_target)
+    else:
+        G_sigma_sampled = np.zeros_like(G_sampled)
 
     return {
         "time": t_target.tolist(),
@@ -138,10 +144,15 @@ def _build_error_payload(logs: dict[str, np.ndarray], sample_times: np.ndarray) 
         "Bdx": B_sampled[0].tolist(),
         "Bdy": B_sampled[1].tolist(),
         "Bdz": B_sampled[2].tolist(),
+        "Btx": B_true_sampled[0].tolist(),  # True gyro bias X
+        "Bty": B_true_sampled[1].tolist(),  # True gyro bias Y
+        "Btz": B_true_sampled[2].tolist(),  # True gyro bias Z
         "wErrX": w_err_sampled[0].tolist(),
         "wErrY": w_err_sampled[1].tolist(),
         "wErrZ": w_err_sampled[2].tolist(),
         "sigma": sigma_sampled.tolist(),
+        "G": G_sampled.tolist(),
+        "G_sigma": G_sigma_sampled.tolist(),
     }
 
 
@@ -282,6 +293,33 @@ def merge_with_defaults(payload: dict) -> dict:
     return cfg
 
 
+def _calculate_pointing_error(q_truth: np.ndarray, q_control: np.ndarray) -> np.ndarray:
+    """Calculate pointing error angle between truth and control quaternions.
+    
+    Args:
+        q_truth: True attitude quaternion [4, n_timesteps]
+        q_control: Control quaternion [4, n_timesteps]
+        
+    Returns:
+        Pointing error angle in radians [n_timesteps]
+    """
+    # Ensure quaternions are normalized
+    q_truth_norm = q_truth / np.linalg.norm(q_truth, axis=0, keepdims=True)
+    q_control_norm = q_control / np.linalg.norm(q_control, axis=0, keepdims=True)
+    
+    # Calculate dot product between quaternions
+    dot_product = np.sum(q_truth_norm * q_control_norm, axis=0)
+    
+    # Clamp dot product to [-1, 1] to handle numerical errors
+    dot_product = np.clip(dot_product, -1.0, 1.0)
+    
+    # Calculate angle: 2 * arccos(|q_true . q_control|)
+    # Use absolute value to handle quaternion double cover
+    angle = 2.0 * np.arccos(np.abs(dot_product))
+    
+    return angle
+
+
 def _bytes_human(n: int) -> str:
     try:
         kb = 1024.0
@@ -362,6 +400,13 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             theta0_rad = 0.0
             spin_rate = 7.2921151e-5
 
+        # Calculate pointing error if control is active
+        pointing_error = None
+        if control_type is not None and control_type != "none" and qc_list:
+            qc_arr = np.array(qc_list, dtype=float)
+            qc_sampled = np.tile(qc_arr.reshape(-1, 1), (1, len(t_s)))
+            pointing_error = _calculate_pointing_error(q_s, qc_sampled)
+
         dataset = {
             "t": t_s.tolist(),
             "qx": qx_arr,
@@ -379,6 +424,11 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             "earth_initial_sidereal_angle_rad": theta0_rad,
             "earth_spin_rate_radps": spin_rate,
         }
+        
+        # Add pointing error if available
+        if pointing_error is not None:
+            dataset["pointing_error_rad"] = pointing_error.tolist()
+            dataset["control_type"] = control_type
         # Metrics
         num_steps = int(t.shape[0])
         time_per_step = (t_compute / num_steps) if num_steps > 0 else 0.0
@@ -506,6 +556,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 theta0_rad = 0.0
                 spin_rate = 7.2921151e-5
 
+            # Calculate pointing error if control is active
+            pointing_error = None
+            if control_type is not None and control_type != "none" and qc_list:
+                qc_arr = np.array(qc_list, dtype=float)
+                if estimation_enabled and "q_c" in logs:
+                    # For estimation enabled, interpolate control quaternion to sampled times
+                    qc_sampled = np.tile(qc_arr.reshape(-1, 1), (1, len(t_s)))
+                    pointing_error = _calculate_pointing_error(q_s, qc_sampled)
+                elif not estimation_enabled:
+                    # For regular simulation, interpolate control quaternion to sampled times
+                    qc_sampled = np.tile(qc_arr.reshape(-1, 1), (1, len(t_s)))
+                    pointing_error = _calculate_pointing_error(q_s, qc_sampled)
+
             dataset = {
                 "t": t_s.tolist(),
                 "qx": qx_arr,
@@ -523,6 +586,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 "earth_initial_sidereal_angle_rad": theta0_rad,
                 "earth_spin_rate_radps": spin_rate,
             }
+            
+            # Add pointing error if available
+            if pointing_error is not None:
+                dataset["pointing_error_rad"] = pointing_error.tolist()
+                dataset["control_type"] = control_type
             # Metrics
             num_steps = int(t.shape[0])
             if estimation_enabled:

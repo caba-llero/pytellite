@@ -1,6 +1,5 @@
 // --- Basic Setup ---
 const metricsDiv = document.getElementById('metrics');
-const simInfoDiv = document.getElementById('sim-info');
 const configBtn = document.getElementById('config-btn');
 const legendOverlay = document.getElementById('legend-content');
 // Simple tabs behavior for left panel
@@ -24,7 +23,8 @@ const timeLabel = document.getElementById('timeLabel');
 const plotModeInputs = document.querySelectorAll('input[name="plotMode"]');
 const groundTruthSection = document.getElementById('groundTruthPlots');
 const errorSection = document.getElementById('errorPlots');
-const errorPlotsUnavailable = document.getElementById('errorPlotsUnavailable');
+const pointingErrorSection = document.getElementById('pointingErrorPlots');
+const gyroBiasSection = document.getElementById('gyroBiasPlots');
 const angleUnitSelect = document.getElementById('angleUnitSelect');
 const orbitStatusBanner = document.getElementById('orbit-status');
 
@@ -53,7 +53,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 rendererContainer.appendChild(renderer.domElement);
 const controls = new THREE.OrbitControls(camera, mainVis);
 controls.enableDamping = true;
-camera.position.set(4, 4, 4);
+camera.position.set(7, 7, 7);
 
 // Cuboid dimensions
 const urlParams = new URLSearchParams(window.location.search);
@@ -177,12 +177,21 @@ renderLegend('attitude');
 // Plotly charts
 const timeUnitSelect = document.getElementById('timeUnitSelect');
 const omegaUnitSelect = document.getElementById('omegaUnitSelect');
+const momentumUnitSelect = document.getElementById('momentumUnitSelect');
 let estimationEnabled = false;
 let errorData = null;
 let groundTruthPlotsInitialised = false;
 
 function hasErrorData() {
     return !!(estimationEnabled && errorData && Array.isArray(errorData.Zdx) && Array.isArray(errorData.sigma));
+}
+
+function hasPointingErrorData() {
+    return !!(dataset && Array.isArray(dataset.pointing_error_rad) && dataset.control_type && dataset.control_type !== 'none');
+}
+
+function hasGyroBiasData() {
+    return !!(estimationEnabled && errorData && Array.isArray(errorData.Btx) && Array.isArray(errorData.Bty) && Array.isArray(errorData.Btz));
 }
 
 function syncPlotModeRadios(mode) {
@@ -194,7 +203,17 @@ function syncPlotModeRadios(mode) {
 }
 
 function setPlotMode(mode, { syncRadios = true, refresh = true, persistRequest = true, force = false } = {}) {
-    const normalized = mode === 'estimate_errors' ? 'estimate_errors' : 'ground_truth';
+    let normalized;
+    if (mode === 'estimate_errors') {
+        normalized = 'estimate_errors';
+    } else if (mode === 'pointing_error') {
+        normalized = 'pointing_error';
+    } else if (mode === 'gyro_bias') {
+        normalized = 'gyro_bias';
+    } else {
+        normalized = 'ground_truth';
+    }
+    
     if (persistRequest || force) {
         requestedPlotMode = normalized;
     }
@@ -202,33 +221,39 @@ function setPlotMode(mode, { syncRadios = true, refresh = true, persistRequest =
     if (syncRadios && plotModeInputs.length) {
         syncPlotModeRadios(normalized);
     }
+    
+    // Show/hide plot sections
     if (groundTruthSection) groundTruthSection.classList.toggle('hidden', normalized !== 'ground_truth');
     if (errorSection) errorSection.classList.toggle('hidden', normalized !== 'estimate_errors');
+    if (pointingErrorSection) pointingErrorSection.classList.toggle('hidden', normalized !== 'pointing_error');
+    if (gyroBiasSection) gyroBiasSection.classList.toggle('hidden', normalized !== 'gyro_bias');
 
     if (!refresh || !dataset) return;
 
     if (normalized === 'estimate_errors') {
         const dataAvailable = hasErrorData();
         if (errorSection) errorSection.classList.toggle('no-data', !dataAvailable);
-        if (errorPlotsUnavailable) {
-            if (dataAvailable) {
-                errorPlotsUnavailable.classList.add('hidden');
-                errorPlotsUnavailable.setAttribute('aria-hidden', 'true');
-            } else {
-                errorPlotsUnavailable.classList.remove('hidden');
-                errorPlotsUnavailable.removeAttribute('aria-hidden');
-            }
-        }
         if (dataAvailable) {
             redrawErrorPlots(frameIndex);
         }
+    } else if (normalized === 'pointing_error') {
+        const dataAvailable = hasPointingErrorData();
+        if (pointingErrorSection) pointingErrorSection.classList.toggle('no-data', !dataAvailable);
+        if (dataAvailable) {
+            redrawPointingErrorPlots(frameIndex);
+        }
+    } else if (normalized === 'gyro_bias') {
+        const dataAvailable = hasGyroBiasData();
+        if (gyroBiasSection) gyroBiasSection.classList.toggle('no-data', !dataAvailable);
+        if (dataAvailable) {
+            redrawGyroBiasPlots(frameIndex);
+        }
     } else {
         if (errorSection) errorSection.classList.remove('no-data');
-        if (errorPlotsUnavailable) {
-            errorPlotsUnavailable.classList.add('hidden');
-            errorPlotsUnavailable.setAttribute('aria-hidden', 'true');
-        }
+        if (pointingErrorSection) pointingErrorSection.classList.remove('no-data');
+        if (gyroBiasSection) gyroBiasSection.classList.remove('no-data');
         rebuildSeriesUpTo(frameIndex);
+        updateRotationVectorAxisTitle();
     }
 }
 
@@ -240,6 +265,7 @@ plotModeInputs.forEach(input => {
 });
 
 setPlotMode(currentPlotMode, { syncRadios: true, refresh: false });
+updateRotationVectorAxisTitle();
 
 function getTimeFactor() {
     const unit = (timeUnitSelect && timeUnitSelect.value) || 's';
@@ -255,9 +281,103 @@ function getTimeUnitLabel() {
     return 's';
 }
 
+function getAngleFactor() {
+    const unit = (angleUnitSelect && angleUnitSelect.value) || 'rad';
+    if (unit === 'deg') return 180 / Math.PI;
+    return 1;
+}
+
+function getAngleUnitLabel() {
+    const unit = (angleUnitSelect && angleUnitSelect.value) || 'rad';
+    return unit === 'deg' ? 'deg' : 'rad';
+}
+
 function getOmegaFactor() {
     const unit = (omegaUnitSelect && omegaUnitSelect.value) || 'rad';
-    return unit === 'deg' ? (180/Math.PI) : 1;
+    if (unit === 'deg') return 180 / Math.PI;
+    if (unit === 'rad_h') return 3600;
+    if (unit === 'deg_h') return (180 / Math.PI) * 3600;
+    return 1;
+}
+
+function getOmegaUnitLabel() {
+    const unit = (omegaUnitSelect && omegaUnitSelect.value) || 'rad';
+    if (unit === 'deg') return 'deg/s';
+    if (unit === 'rad_h') return 'rad/h';
+    if (unit === 'deg_h') return 'deg/h';
+    return 'rad/s';
+}
+
+function getMomentumFactor() {
+    const unit = (momentumUnitSelect && momentumUnitSelect.value) || 'nms';
+    switch (unit) {
+        case 'nms':
+        default:
+            return 1;
+    }
+}
+
+function getMomentumUnitLabel() {
+    const unit = (momentumUnitSelect && momentumUnitSelect.value) || 'nms';
+    if (unit === 'nms') return 'N·m·s';
+    return unit;
+}
+
+const rotationVectorCache = { x: [], y: [], z: [] };
+
+function resetRotationVectorCache() {
+    rotationVectorCache.x.length = 0;
+    rotationVectorCache.y.length = 0;
+    rotationVectorCache.z.length = 0;
+}
+
+function quaternionToRotationVector(qx, qy, qz, qw) {
+    const EPS = 1e-12;
+    let vx = Number(qx ?? 0);
+    let vy = Number(qy ?? 0);
+    let vz = Number(qz ?? 0);
+    let qs = Number(qw ?? 0);
+    const qNormSq = vx * vx + vy * vy + vz * vz + qs * qs;
+    if (qNormSq <= EPS * EPS) {
+        return [0, 0, 0];
+    }
+    const invNorm = 1 / Math.sqrt(qNormSq);
+    vx *= invNorm;
+    vy *= invNorm;
+    vz *= invNorm;
+    qs *= invNorm;
+    const vNorm = Math.sqrt(vx * vx + vy * vy + vz * vz);
+    if (vNorm < EPS) {
+        return [0, 0, 0];
+    }
+    const angle = 2 * Math.atan2(vNorm, qs);
+    const scale = angle / vNorm;
+    return [vx * scale, vy * scale, vz * scale];
+}
+
+function ensureRotationVectorUpTo(index) {
+    if (!dataset || index < 0) return;
+    const maxValidIndex = Math.min(
+        index,
+        (dataset.qx?.length ?? 0) - 1,
+        (dataset.qy?.length ?? 0) - 1,
+        (dataset.qz?.length ?? 0) - 1,
+        (dataset.qw?.length ?? 0) - 1
+    );
+    if (!Number.isFinite(maxValidIndex) || maxValidIndex < 0) return;
+    for (let i = rotationVectorCache.x.length; i <= maxValidIndex; i++) {
+        const rv = quaternionToRotationVector(dataset.qx[i], dataset.qy[i], dataset.qz[i], dataset.qw[i]);
+        rotationVectorCache.x[i] = rv[0];
+        rotationVectorCache.y[i] = rv[1];
+        rotationVectorCache.z[i] = rv[2];
+    }
+}
+
+function updateRotationVectorAxisTitle() {
+    if (typeof Plotly === 'undefined') return;
+    const plotDiv = document.getElementById('quatPlot');
+    if (!plotDiv || !plotDiv.data || !plotDiv.data.length) return;
+    Plotly.relayout(plotDiv, { 'yaxis.title.text': `Rotation vector (${getAngleUnitLabel()})` });
 }
 
 function createMultiTraceChart(divId, yAxisTitle, traces) {
@@ -267,7 +387,11 @@ function createMultiTraceChart(divId, yAxisTitle, traces) {
         const layout = {
             paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
             margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
-            xaxis: { color: 'white', gridcolor: '#222' },
+            xaxis: { 
+                color: 'white', 
+                gridcolor: '#222',
+                title: { text: '', font: { color: 'white', size: 12 } }
+            },
             yaxis: {
                 color: 'white',
                 gridcolor: '#222',
@@ -288,27 +412,29 @@ function rebuildSeriesUpTo(index) {
     if (!dataset || typeof Plotly === 'undefined') return;
     const i = Math.min(index, dataset.t.length - 1);
     const tf = getTimeFactor();
+    const af = getAngleFactor();
     const of = getOmegaFactor();
     const xArr = dataset.t.slice(0, i + 1).map(t => t * tf);
+    ensureRotationVectorUpTo(i);
     const restyleMulti = (id, yArrays) => {
         const xs = yArrays.map(() => xArr);
         Plotly.restyle(id, { x: xs, y: yArrays }, [0,1,2,3].slice(0, yArrays.length));
     };
     restyleMulti('quatPlot', [
-        dataset.qx.slice(0, i + 1),
-        dataset.qy.slice(0, i + 1),
-        dataset.qz.slice(0, i + 1),
-        dataset.qw.slice(0, i + 1)
+        rotationVectorCache.x.slice(0, i + 1).map(v => v * af),
+        rotationVectorCache.y.slice(0, i + 1).map(v => v * af),
+        rotationVectorCache.z.slice(0, i + 1).map(v => v * af)
     ]);
     restyleMulti('omegaPlot', [
         dataset.p.slice(0, i + 1).map(v => v * of),
         dataset.q.slice(0, i + 1).map(v => v * of),
         dataset.r.slice(0, i + 1).map(v => v * of)
     ]);
+    const hFactor = getMomentumFactor();
     restyleMulti('hPlot', [
-        dataset.hx.slice(0, i + 1),
-        dataset.hy.slice(0, i + 1),
-        dataset.hz.slice(0, i + 1)
+        dataset.hx.slice(0, i + 1).map(v => v * hFactor),
+        dataset.hy.slice(0, i + 1).map(v => v * hFactor),
+        dataset.hz.slice(0, i + 1).map(v => v * hFactor)
     ]);
 }
 
@@ -321,9 +447,12 @@ function redrawErrorPlots(index) {
     if (maxLen === 0) return;
     const i = Math.min(index, maxLen - 1);
     const tf = getTimeFactor();
+    const af = getAngleFactor();
+    const of = getOmegaFactor();
+    const hf = getMomentumFactor();
     const rawTimes = estimatorTimes.slice(0, i + 1).map(t => Number(t ?? 0));
     const timeSlice = rawTimes.map(t => t * tf);
-    const plotError = (plotId, components, sigmaIndices, yAxisTitle, valueTransform = (x) => x) => {
+    const plotError = (plotId, components, sigmaIndices, yAxisTitle, valueTransform = (x) => x, extraTracesBuilder = null) => {
         const traces = [];
         components.forEach((comp) => {
             const series = errorData[comp.key];
@@ -367,6 +496,16 @@ function redrawErrorPlots(index) {
                 });
             });
         }
+        if (typeof extraTracesBuilder === 'function') {
+            const extra = extraTracesBuilder(timeSlice, valueTransform);
+            if (Array.isArray(extra)) {
+                extra.forEach(trace => {
+                    if (trace && trace.x && trace.y) {
+                        traces.push(trace);
+                    }
+                });
+            }
+        }
         if (!traces.length) {
             Plotly.react(plotId, [], { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)' });
             return;
@@ -375,7 +514,11 @@ function redrawErrorPlots(index) {
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
             margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
-            xaxis: { color: 'white', gridcolor: '#222' },
+            xaxis: { 
+                color: 'white', 
+                gridcolor: '#222',
+                title: { text: '', font: { color: 'white', size: 12 } }
+            },
             yaxis: { color: 'white', gridcolor: '#222', automargin: true, title: { text: yAxisTitle, font: { color: 'white', size: 12 } } },
             showlegend: false
         };
@@ -386,19 +529,112 @@ function redrawErrorPlots(index) {
         { key: 'Zdx', color: '#ff0000', label: 'Z_d,x' },
         { key: 'Zdy', color: '#00ff00', label: 'Z_d,y' },
         { key: 'Zdz', color: '#0000ff', label: 'Z_d,z' }
-    ], [0, 1, 2], 'Error rotation vector');
+    ], [0, 1, 2], `Error rotation vector (${getAngleUnitLabel()})`, (v) => v * af);
 
     plotError('biasErrPlot', [
         { key: 'Bdx', color: '#ff0000', label: 'B_d,x' },
         { key: 'Bdy', color: '#00ff00', label: 'B_d,y' },
         { key: 'Bdz', color: '#0000ff', label: 'B_d,z' }
-    ], [3, 4, 5], 'Gyro bias error', (v) => v * getOmegaFactor());
+    ], [3, 4, 5], `Gyro bias error (${getOmegaUnitLabel()})`, (v) => v * of);
 
-    plotError('wErrPlot', [
-        { key: 'wErrX', color: '#ff0000', label: 'ω error x' },
-        { key: 'wErrY', color: '#00ff00', label: 'ω error y' },
-        { key: 'wErrZ', color: '#0000ff', label: 'ω error z' }
-    ], null, 'Angular velocity error', (v) => v * getOmegaFactor());
+}
+
+function redrawPointingErrorPlots(index) {
+    if (!hasPointingErrorData() || typeof Plotly === 'undefined') {
+        return;
+    }
+    
+    const i = Math.min(index, dataset.t.length - 1);
+    const tf = getTimeFactor();
+    const af = getAngleFactor();
+    const timeSlice = dataset.t.slice(0, i + 1).map(t => t * tf);
+    
+    // Convert pointing error from radians to selected angle unit
+    const pointingErrorConverted = dataset.pointing_error_rad.slice(0, i + 1).map(v => v * af);
+    
+    const traces = [{
+        x: timeSlice,
+        y: pointingErrorConverted,
+        type: 'scatter',
+        mode: 'lines',
+        line: { color: '#ffff00', width: 2 },
+        name: 'Pointing Error'
+    }];
+    
+    const layout = {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
+        xaxis: { 
+            color: 'white', 
+            gridcolor: '#222',
+            title: { text: `Time (${getTimeUnitLabel()})`, font: { color: 'white', size: 12 } }
+        },
+        yaxis: { 
+            color: 'white', 
+            gridcolor: '#222', 
+            automargin: true, 
+            title: { text: `Pointing Error (${getAngleUnitLabel()})`, font: { color: 'white', size: 12 } } 
+        },
+        showlegend: false
+    };
+    
+    Plotly.react('pointingErrorPlot', traces, layout, { responsive: true });
+}
+
+function redrawGyroBiasPlots(index) {
+    if (!hasGyroBiasData() || typeof Plotly === 'undefined') {
+        return;
+    }
+    
+    const estimatorTimes = Array.isArray(errorData.time) ? errorData.time : dataset.t;
+    const maxLen = Math.min(dataset.t.length, estimatorTimes.length);
+    if (maxLen === 0) return;
+    const i = Math.min(index, maxLen - 1);
+    const tf = getTimeFactor();
+    const of = getOmegaFactor(); // Gyro bias uses angular velocity units
+    const timeSlice = estimatorTimes.slice(0, i + 1).map(t => t * tf);
+    
+    // Helper function to create individual gyro bias plots
+    const createGyroBiasPlot = (plotId, biasData, axisLabel, color) => {
+        if (!Array.isArray(biasData)) return;
+        const len = Math.min(biasData.length, timeSlice.length);
+        if (len === 0) return;
+        
+        const traces = [{
+            x: timeSlice.slice(0, len),
+            y: biasData.slice(0, len).map(v => v * of),
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: color, width: 2 },
+            name: `Gyro Bias ${axisLabel}`
+        }];
+        
+        const layout = {
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            margin: { l: 40, r: 20, b: 30, t: 10, pad: 4 },
+            xaxis: { 
+                color: 'white', 
+                gridcolor: '#222',
+                title: { text: '', font: { color: 'white', size: 12 } }
+            },
+            yaxis: { 
+                color: 'white', 
+                gridcolor: '#222', 
+                automargin: true, 
+                title: { text: `Gyro Bias ${axisLabel} (${getOmegaUnitLabel()})`, font: { color: 'white', size: 12 } } 
+            },
+            showlegend: false
+        };
+        
+        Plotly.react(plotId, traces, layout, { responsive: true });
+    };
+    
+    // Create three separate plots for X, Y, Z axes
+    createGyroBiasPlot('gyroBiasXPlot', errorData.Btx, 'X', '#ff0000');
+    createGyroBiasPlot('gyroBiasYPlot', errorData.Bty, 'Y', '#00ff00');
+    createGyroBiasPlot('gyroBiasZPlot', errorData.Btz, 'Z', '#0000ff');
 }
 
 // WebSocket & Controls
@@ -427,10 +663,20 @@ function updateAllVisuals(index, isScrubbing = false) {
     timelineSlider.value = i;
     updateTimeLabel(i);
 
-  if (typeof Plotly === 'undefined') return;
+    if (typeof Plotly === 'undefined') return;
 
     if (currentPlotMode === 'estimate_errors') {
         redrawErrorPlots(i);
+        return;
+    }
+    
+    if (currentPlotMode === 'pointing_error') {
+        redrawPointingErrorPlots(i);
+        return;
+    }
+    
+    if (currentPlotMode === 'gyro_bias') {
+        redrawGyroBiasPlots(i);
         return;
     }
 
@@ -439,12 +685,23 @@ function updateAllVisuals(index, isScrubbing = false) {
         return;
     }
 
-    const tf = getTimeFactor();
-    const of = getOmegaFactor();
-    const tx = dataset.t[i] * tf;
-    Plotly.extendTraces('quatPlot',  { x: [[tx],[tx],[tx],[tx]], y: [[dataset.qx[i]],[dataset.qy[i]],[dataset.qz[i]],[dataset.qw[i]]] }, [0,1,2,3]);
-    Plotly.extendTraces('omegaPlot', { x: [[tx],[tx],[tx]], y: [[dataset.p[i] * of],[dataset.q[i] * of],[dataset.r[i] * of]] }, [0,1,2]);
-    Plotly.extendTraces('hPlot',     { x: [[tx],[tx],[tx]], y: [[dataset.hx[i]],[dataset.hy[i]],[dataset.hz[i]]] }, [0,1,2]);
+    if (currentPlotMode === 'pointing_error' && hasPointingErrorData()) {
+        const tf = getTimeFactor();
+        const af = getAngleFactor();
+        const tx = dataset.t[i] * tf;
+        const pointingErrorValue = dataset.pointing_error_rad[i] * af;
+        Plotly.extendTraces('pointingErrorPlot', { x: [[tx]], y: [[pointingErrorValue]] }, [0]);
+    } else {
+        const tf = getTimeFactor();
+        const af = getAngleFactor();
+        const of = getOmegaFactor();
+        const hf = getMomentumFactor();
+        const tx = dataset.t[i] * tf;
+        ensureRotationVectorUpTo(i);
+        Plotly.extendTraces('quatPlot',  { x: [[tx],[tx],[tx]], y: [[rotationVectorCache.x[i] * af],[rotationVectorCache.y[i] * af],[rotationVectorCache.z[i] * af]] }, [0,1,2]);
+        Plotly.extendTraces('omegaPlot', { x: [[tx],[tx],[tx]], y: [[dataset.p[i] * of],[dataset.q[i] * of],[dataset.r[i] * of]] }, [0,1,2]);
+        Plotly.extendTraces('hPlot',     { x: [[tx],[tx],[tx]], y: [[dataset.hx[i] * hf],[dataset.hy[i] * hf],[dataset.hz[i] * hf]] }, [0,1,2]);
+    }
 }
 
 function setPlayingState(playing) {
@@ -482,65 +739,94 @@ function renderMetrics(m) {
     metricsDiv.innerHTML = html;
 }
 
-function renderSimInfo(m) {
-    if (!simInfoDiv) return;
-    const totalTime = (dataset && dataset.t && dataset.t.length > 0) ? dataset.t[dataset.t.length - 1] : (m && m.simulation_time_s) || 0;
-    const numSamples = (dataset && dataset.t && dataset.t.length) || (m && m.num_integration_points) || 0;
-    const sr = (dataset && dataset.sample_rate) || (m && m.sample_rate) || '—';
-    const pbs = (m && m.playback_speed) || 1;
-    const tmax = (m && m.t_max) || (typeof totalTime === 'number' ? totalTime : '—');
-    const rows = [
-        ['Sim time', `${(Number(totalTime) || 0).toFixed(2)} s`],
-        ['Samples (N)', `${numSamples}`],
-        ['Sample rate', `${sr} Hz`],
-        ['Playback speed', `${pbs}x`],
-        ['t_max', `${tmax} s`]
-    ];
-    const html = rows.map(([k,v]) => `<div><span style="color:#8fa1b3">${k}:</span> <span style="color:#e6eefc">${v}</span></div>`).join('');
-    simInfoDiv.innerHTML = html;
-}
+
 
 function startPlaybackFromDataset(data, m=null) {
     dataset = data;
     metrics = m;
+    resetRotationVectorCache();
     // Read Earth rotation parameters from dataset
     earthInitialSiderealAngleRad = Number(data.earth_initial_sidereal_angle_rad || 0.0) || 0.0;
     earthSpinRateRadps = Number(data.earth_spin_rate_radps || 0.0) || 0.0;
     if (metrics) {
         renderMetrics(metrics);
-        renderSimInfo(metrics);
     }
     frameIndex = 0;
+    
+    // Enable/disable pointing error radio button based on control type
+    const pointingErrorRadio = document.querySelector('input[name="plotMode"][value="pointing_error"]');
+    if (pointingErrorRadio) {
+        const hasControlData = hasPointingErrorData();
+        pointingErrorRadio.disabled = !hasControlData;
+        const label = pointingErrorRadio.closest('.plot-mode-option');
+        if (label) {
+            label.style.opacity = hasControlData ? '1' : '0.5';
+        }
+    }
+    
+    // Enable/disable estimation errors radio button based on estimation enabled
+    const estimateErrorsRadio = document.querySelector('input[name="plotMode"][value="estimate_errors"]');
+    if (estimateErrorsRadio) {
+        const hasEstimationData = hasErrorData();
+        estimateErrorsRadio.disabled = !hasEstimationData;
+        const label = estimateErrorsRadio.closest('.plot-mode-option');
+        if (label) {
+            label.style.opacity = hasEstimationData ? '1' : '0.5';
+        }
+    }
+    
+    // Enable/disable gyro bias radio button based on estimation enabled
+    const gyroBiasRadio = document.querySelector('input[name="plotMode"][value="gyro_bias"]');
+    if (gyroBiasRadio) {
+        const hasGyroBias = hasGyroBiasData();
+        gyroBiasRadio.disabled = !hasGyroBias;
+        const label = gyroBiasRadio.closest('.plot-mode-option');
+        if (label) {
+            label.style.opacity = hasGyroBias ? '1' : '0.5';
+        }
+    }
     if (typeof Plotly !== 'undefined' && !groundTruthPlotsInitialised) {
-        createMultiTraceChart('quatPlot', 'Attitude quaternion', [
-            { name: 'q<sub>x</sub>', color: '#ff0000' },
-            { name: 'q<sub>y</sub>', color: '#00ff00' },
-            { name: 'q<sub>z</sub>', color: '#0000ff' },
-            { name: 'q<sub>w</sub>', color: '#ffffff' }
+        createMultiTraceChart('quatPlot', `Rotation vector (${getAngleUnitLabel()})`, [
+            { name: 'θ<sub>x</sub>', color: '#ff0000' },
+            { name: 'θ<sub>y</sub>', color: '#00ff00' },
+            { name: 'θ<sub>z</sub>', color: '#0000ff' }
         ]);
-        createMultiTraceChart('omegaPlot', 'Angular velocity', [
+        createMultiTraceChart('omegaPlot', `Angular velocity (${getOmegaUnitLabel()})`, [
             { name: 'ω<sub>x</sub>', color: '#ff0000' },
             { name: 'ω<sub>y</sub>', color: '#00ff00' },
             { name: 'ω<sub>z</sub>', color: '#0000ff' }
         ]);
-        createMultiTraceChart('hPlot', 'Wheel angular momentum', [
+        createMultiTraceChart('hPlot', `Wheel angular momentum (${getMomentumUnitLabel()})`, [
             { name: 'h<sub>x</sub>', color: '#ff0000' },
             { name: 'h<sub>y</sub>', color: '#00ff00' },
             { name: 'h<sub>z</sub>', color: '#0000ff' }
         ]);
         groundTruthPlotsInitialised = true;
     }
+    
+    // Initialize pointing error plot if needed
+    if (typeof Plotly !== 'undefined' && hasPointingErrorData()) {
+        createMultiTraceChart('pointingErrorPlot', `Pointing Error (${getAngleUnitLabel()})`, [
+            { name: 'Pointing Error', color: '#ffff00' }
+        ]);
+    }
+    updateRotationVectorAxisTitle();
 
     timelineSlider.max = dataset.t.length - 1;
     updateAllVisuals(0, true);
-    if (!hasErrorData()) {
-        if (requestedPlotMode === 'estimate_errors') {
-            setPlotMode('estimate_errors', { syncRadios: true, refresh: true, persistRequest: false });
-        } else {
-            setPlotMode('ground_truth', { syncRadios: true, refresh: true, persistRequest: false });
-        }
-    } else if (requestedPlotMode === 'estimate_errors') {
+    // Handle plot mode switching based on available data
+    if (requestedPlotMode === 'estimate_errors' && hasErrorData()) {
         setPlotMode('estimate_errors', { syncRadios: true, refresh: true });
+    } else if (requestedPlotMode === 'pointing_error' && hasPointingErrorData()) {
+        setPlotMode('pointing_error', { syncRadios: true, refresh: true });
+    } else if (requestedPlotMode === 'gyro_bias' && hasGyroBiasData()) {
+        setPlotMode('gyro_bias', { syncRadios: true, refresh: true });
+    } else if (requestedPlotMode === 'estimate_errors' && !hasErrorData()) {
+        setPlotMode('estimate_errors', { syncRadios: true, refresh: true, persistRequest: false });
+    } else if (requestedPlotMode === 'pointing_error' && !hasPointingErrorData()) {
+        setPlotMode('pointing_error', { syncRadios: true, refresh: true, persistRequest: false });
+    } else if (requestedPlotMode === 'gyro_bias' && !hasGyroBiasData()) {
+        setPlotMode('gyro_bias', { syncRadios: true, refresh: true, persistRequest: false });
     } else {
         setPlotMode('ground_truth', { syncRadios: true, refresh: true, persistRequest: false });
     }
@@ -706,23 +992,50 @@ socket.onclose = () => {};
 socket.onerror = () => {};
 
 // Unit controls handlers
+function refreshPlotsForUnits() {
+    if (currentPlotMode === 'ground_truth') {
+        rebuildSeriesUpTo(frameIndex);
+    } else if (currentPlotMode === 'estimate_errors') {
+        redrawErrorPlots(frameIndex);
+    } else if (currentPlotMode === 'pointing_error') {
+        redrawPointingErrorPlots(frameIndex);
+    } else if (currentPlotMode === 'gyro_bias') {
+        redrawGyroBiasPlots(frameIndex);
+    }
+}
+
+function updatePlotTitles() {
+    if (typeof Plotly === 'undefined') return;
+    
+    // Update ground truth plots (remove x-axis labels)
+    Plotly.relayout('quatPlot', { 'xaxis.title.text': '' });
+    Plotly.relayout('omegaPlot', { 'xaxis.title.text': '', 'yaxis.title.text': `Angular velocity (${getOmegaUnitLabel()})` });
+    Plotly.relayout('hPlot', { 'xaxis.title.text': '', 'yaxis.title.text': `Wheel angular momentum (${getMomentumUnitLabel()})` });
+    
+    // Update error plots if in error mode (remove x-axis labels)
+    if (currentPlotMode === 'estimate_errors') {
+        Plotly.relayout('rotErrPlot', { 'xaxis.title.text': '', 'yaxis.title.text': `Error rotation vector (${getAngleUnitLabel()})` });
+        Plotly.relayout('biasErrPlot', { 'xaxis.title.text': '', 'yaxis.title.text': `Gyro bias error (${getOmegaUnitLabel()})` });
+    }
+    updateRotationVectorAxisTitle();
+}
+
+function handleUnitChange() {
+    refreshPlotsForUnits();
+    updatePlotTitles();
+}
+
 if (timeUnitSelect) {
-    timeUnitSelect.addEventListener('change', () => {
-        if (currentPlotMode === 'ground_truth') {
-            rebuildSeriesUpTo(frameIndex);
-        } else if (currentPlotMode === 'estimate_errors') {
-            redrawErrorPlots(frameIndex);
-        }
-    });
+    timeUnitSelect.addEventListener('change', handleUnitChange);
 }
 if (omegaUnitSelect) {
-    omegaUnitSelect.addEventListener('change', () => {
-        if (currentPlotMode === 'ground_truth') {
-            rebuildSeriesUpTo(frameIndex);
-        } else if (currentPlotMode === 'estimate_errors') {
-            redrawErrorPlots(frameIndex);
-        }
-    });
+    omegaUnitSelect.addEventListener('change', handleUnitChange);
+}
+if (angleUnitSelect) {
+    angleUnitSelect.addEventListener('change', handleUnitChange);
+}
+if (momentumUnitSelect) {
+    momentumUnitSelect.addEventListener('change', handleUnitChange);
 }
 
 // Animation loop
@@ -788,7 +1101,7 @@ if (configBtn) {
                         orbitStatusBanner.setAttribute('hidden', 'true');
                     }
                 }
-                camera.position.set(4, 4, 4);
+                camera.position.set(7, 7, 7);
                 controls.target.set(0, 0, 0);
                 controls.update();
                 renderLegend(currentView);

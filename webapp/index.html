@@ -38,24 +38,36 @@
             <div class="panels">
                 <section class="tab-panel active" data-tab="units" role="tabpanel">
                     <div class="unit-selectors">
-                        <label for="timeUnitSelect">Time</label>
-                        <select id="timeUnitSelect">
-                            <option value="s" selected>seconds</option>
-                            <option value="m">minutes</option>
-                            <option value="h">hours</option>
-                        </select>
-                        <label for="angleUnitSelect">Angle</label>
-                        <select id="angleUnitSelect">
-                            <option value="rad" selected>rad</option>
-                            <option value="deg">degree</option>
-                        </select>
-                        <label for="omegaUnitSelect">Angular velocity</label>
-                        <select id="omegaUnitSelect">
-                            <option value="rad" selected>rad/s</option>
-                            <option value="deg">deg/s</option>
-                            <option value="rad_h">rad/h</option>
-                            <option value="deg_h">deg/h</option>
-                        </select>
+                        <div class="unit-row">
+                            <label for="timeUnitSelect">Time</label>
+                            <select id="timeUnitSelect">
+                                <option value="s" selected>seconds</option>
+                                <option value="m">minutes</option>
+                                <option value="h">hours</option>
+                            </select>
+                        </div>
+                        <div class="unit-row">
+                            <label for="angleUnitSelect">Angle</label>
+                            <select id="angleUnitSelect">
+                                <option value="rad" selected>rad</option>
+                                <option value="deg">degree</option>
+                            </select>
+                        </div>
+                        <div class="unit-row">
+                            <label for="omegaUnitSelect">Angular velocity</label>
+                            <select id="omegaUnitSelect">
+                                <option value="rad" selected>rad/s</option>
+                                <option value="deg">deg/s</option>
+                                <option value="rad_h">rad/h</option>
+                                <option value="deg_h">deg/h</option>
+                            </select>
+                        </div>
+                        <div class="unit-row">
+                            <label for="momentumUnitSelect">Angular momentum</label>
+                            <select id="momentumUnitSelect">
+                                <option value="nms" selected>N·m·s</option>
+                            </select>
+                        </div>
                     </div>
                 </section>
                 <section class="tab-panel" data-tab="plots" role="tabpanel">
@@ -65,13 +77,20 @@
                             <span>Ground truth</span>
                         </label>
                         <label class="plot-mode-option">
-                            <input type="radio" name="plotMode" value="estimate_errors">
-                            <span>Estimate errors</span>
+                            <input type="radio" name="plotMode" value="estimate_errors" id="estimate_errors_radio">
+                            <span>Estimation errors</span>
+                        </label>
+                        <label class="plot-mode-option">
+                            <input type="radio" name="plotMode" value="pointing_error" disabled>
+                            <span>Pointing error</span>
+                        </label>
+                        <label class="plot-mode-option">
+                            <input type="radio" name="plotMode" value="gyro_bias" disabled>
+                            <span>Gyro bias</span>
                         </label>
                     </div>
                 </section>
                 <section class="tab-panel" data-tab="other" role="tabpanel">
-                    <div id="sim-info" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
                     <div id="metrics" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
                 </section>
             </div>
@@ -105,8 +124,14 @@
             <div id="errorPlots" class="plot-column plot-section hidden">
                 <div id="rotErrPlot" class="plot-wrapper"></div>
                 <div id="biasErrPlot" class="plot-wrapper"></div>
-                <div id="wErrPlot" class="plot-wrapper"></div>
-                <div id="errorPlotsUnavailable" class="plot-placeholder hidden">Enable estimation to view error plots.</div>
+            </div>
+            <div id="pointingErrorPlots" class="plot-column plot-section hidden">
+                <div id="pointingErrorPlot" class="plot-wrapper"></div>
+            </div>
+            <div id="gyroBiasPlots" class="plot-column plot-section hidden">
+                <div id="gyroBiasXPlot" class="plot-wrapper"></div>
+                <div id="gyroBiasYPlot" class="plot-wrapper"></div>
+                <div id="gyroBiasZPlot" class="plot-wrapper"></div>
             </div>
         </div>
     </div>
