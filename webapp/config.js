@@ -176,12 +176,14 @@ async function init() {
         setValue('CQ2', cq2);
         setValue('CQ3', cq3);
 
-    // Estimation defaults
+    // Estimation defaults - prioritize server defaults over localStorage for enable_estimation
     const mergedEstimation = {
         ...(defaults.estimation || {}),
         ...(saved.estimation || {})
     };
-    const enableEstimation = Boolean(mergedEstimation.enable_estimation);
+    // For enable_estimation specifically, always use the server default from config file
+    // to ensure that config files load with their intended estimation state
+    const enableEstimation = Boolean(defaults.estimation?.enable_estimation ?? false);
     const estimationCheckbox = document.getElementById('ENABLE_ESTIMATION');
     if (estimationCheckbox) {
         estimationCheckbox.checked = enableEstimation;
