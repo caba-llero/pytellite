@@ -93,7 +93,8 @@ def quat_mul(q1, q2):     # Quaternion product q1 ⊗ q2
     w = w1*w2 - x1*x2 - y1*y2 - z1*z2
     return np.array([x,y,z,w])
 
-def quat_propagate(q, w, dt, p_min = 1e-7): 
+@njit(cache=True, fastmath=True)
+def quat_propagate(q, w, dt, p_min=1e-7): 
     # propagates initial quaternion q thru angular vel w and delta time dt
     # done with q <-- dq ⊗ q
     dz = np.asarray(w, dtype=np.float64) * float(dt)

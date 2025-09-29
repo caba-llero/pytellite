@@ -1,0 +1,111 @@
+name: Control with attitude estimation
+simulation:
+  dt_sim: 0.1
+  time_scale: 100.0
+  mode: SIL
+  rng_seed: 12345
+  t_final: 5.0
+  # Precomputation defaults for GUI playback
+  t_max: 700.0
+  playback_speed: 100.0
+  sample_rate: 30.0
+  rtol: 1.0e-12
+  atol: 1.0e-12
+
+spacecraft:
+  mass: 10.0
+  inertia: [3000,2000,1000]
+  shape: [3, 2, 1]
+
+sensors:
+  gps:
+    rate_hz: 1.0
+    sigma_pos_m: 5.0
+    sigma_vel_mps: 0.5
+  gyro:
+    rate_hz: 100.0
+    sigma_radps: 0.001
+    bias_rw_sigma: 0.00001
+
+actuators:
+  reaction_wheels:
+    max_torque: 0.01
+    max_speed_rpm: 6000
+    inertia: 0.001
+
+perturbations:
+  two_body: true
+  j2: false
+  jn: false
+  sun_moon: false
+  srp: false
+  drag: false
+
+comms:
+  protocol: udp
+  udp:
+    plant_to_flight_port: 10001
+    flight_to_plant_port: 10002
+
+watchdog:
+  timeout_sec: 1.0
+
+logging:
+  replay_file: logs/replay.ndjson
+
+# Default control parameters
+control:
+  control_type: nonlinear_tracking # none | tracking (inertial pointing)
+  kp: 10.0
+  kd: 250.0
+  qc: [0.0, 0.0, 0.0, 1.0]
+
+estimation:
+  enable_estimation: true
+  gt_freq: 50.0
+  gyro_meas_freq: 20.0
+  star_meas_freq: 1.0
+  ctrl_freq: 1.0
+  gyro_arw: 0.0000035
+  gyro_rrw: 0.00034
+  star_iso_acc: 3.0e-5
+  star_init_acc: 0.0
+  gyro_true_bias: 2.4e-7
+  gyro_est_bias: 0
+  gyro_init_cov: 1e-10
+  attitude_init_cov: 9.0e-10
+
+initial_conditions:
+  # ~500 km circular orbit around Earth, ECI position on x-axis.
+  r_eci_m: [6871000.0, 0.0, 0.0]
+  v_eci_mps: [0.0, 7610.0, 0.0]
+
+  # Initial attitude can be specified wrt the orbit frame or the inertial frame.
+  # Use the 'frame' parameter to choose.
+  frame: 'inertial' # 'orbit' or 'inertial'
+
+  # Orbit frame initial conditions
+  # q_ob: quaternion from orbit frame to body frame.
+  # A 45 deg rotation over the x-axis.
+  q_ob: [-0.0174, -0.0175, 0.036, 0.999]
+  # omega_bo_radps: angular velocity of body wrt orbit frame, in body frame [rad/s]
+  omega_bo_radps: [0.0001, 0.00005, 0.00003]
+
+  # Inertial frame initial conditions
+  q_bi: [-0.0174, -0.0175, 0.036, 0.999]
+  omega_bi_radps: [0.0001, 0.00005, 0.00003]
+
+  # Orbit elements for UI defaults
+  orbit:
+    epoch_utc_fractional_yydoy: 25258.5000  # YYDDD.DDDD (2025-09-15 12:00 UTC)
+    keplerian:
+      semi_major_axis_km: 7078.0
+      eccentricity: 0.0010
+      inclination_deg: 97.4
+      raan_deg: 0.0
+      argument_of_the_perigee_deg: 90.0
+      true_anomaly_deg: 0.0
+
+
+
+

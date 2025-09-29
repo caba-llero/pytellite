@@ -8,6 +8,25 @@ import numpy as np
 import yaml
 from scipy.integrate import solve_ivp
 
+
+def _identity_decorator(func=None, **kwargs):
+    if func is None:
+        return lambda f: f
+    return func
+
+
+if os.getenv("DISABLE_NUMBA", "0") == "1":
+    njit = _identity_decorator  # type: ignore[assignment]
+    NUMBA_AVAILABLE = False
+else:
+    try:
+        from numba import njit  # type: ignore
+    except Exception:  # pragma: no cover - fallback when Numba missing
+        njit = _identity_decorator  # type: ignore[assignment]
+        NUMBA_AVAILABLE = False
+    else:  # pragma: no cover - executed only when Numba is available
+        NUMBA_AVAILABLE = True
+
 from ..math import quaternion as qm
 from ..math.integration import rk45_step_autonomous as int_step
 from ..math.quaternion import slerp_quat_array
@@ -19,6 +38,248 @@ from .dynamics import state_deriv, state_deriv_kalman, integrate_ang_vel_rk4, in
 MU_EARTH = 3.986004418e14  # [m^3/s^2]
 ARCSEC_TO_RAD = np.deg2rad(1.0 / 3600.0)
 DEFAULT_QC = np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+
+
+def _build_event_mask(idxs: set[int], n_steps: int) -> np.ndarray:
+    """Return a uint8 mask marking index membership for measurement scheduling."""
+
+    mask = np.zeros(n_steps, dtype=np.uint8)
+    for idx in idxs:
+        if 0 <= idx < n_steps:
+            mask[idx] = 1
+    return mask
+
+
+# Dormand–Prince coefficients (specialised for 6-state Kalman propagation)
+_A21 = 1.0 / 5.0
+_A31 = 3.0 / 40.0
+_A32 = 9.0 / 40.0
+_A41 = 44.0 / 45.0
+_A42 = -56.0 / 15.0
+_A43 = 32.0 / 9.0
+_A51 = 19372.0 / 6561.0
+_A52 = -25360.0 / 2187.0
+_A53 = 64448.0 / 6561.0
+_A54 = -212.0 / 729.0
+_A61 = 9017.0 / 3168.0
+_A62 = -355.0 / 33.0
+_A63 = 46732.0 / 5247.0
+_A64 = 49.0 / 176.0
+_A65 = -5103.0 / 18656.0
+
+_B50 = 35.0 / 384.0
+_B52 = 500.0 / 1113.0
+_B53 = 125.0 / 192.0
+_B54 = -2187.0 / 6784.0
+_B55 = 11.0 / 84.0
+
+
+@njit(cache=True)
+def _rk45_kalman_step(y: np.ndarray, dt: float, J: np.ndarray, Ji: np.ndarray, L: np.ndarray) -> np.ndarray:
+    """Single Dormand–Prince (RK45) step for the 6-state Kalman propagation."""
+
+    k0 = state_deriv_kalman(y, J, Ji, L)
+
+    stage = y + dt * (_A21 * k0)
+    k1 = state_deriv_kalman(stage, J, Ji, L)
+
+    stage = y + dt * (_A31 * k0 + _A32 * k1)
+    k2 = state_deriv_kalman(stage, J, Ji, L)
+
+    stage = y + dt * (_A41 * k0 + _A42 * k1 + _A43 * k2)
+    k3 = state_deriv_kalman(stage, J, Ji, L)
+
+    stage = y + dt * (_A51 * k0 + _A52 * k1 + _A53 * k2 + _A54 * k3)
+    k4 = state_deriv_kalman(stage, J, Ji, L)
+
+    stage = y + dt * (_A61 * k0 + _A62 * k1 + _A63 * k2 + _A64 * k3 + _A65 * k4)
+    k5 = state_deriv_kalman(stage, J, Ji, L)
+
+    y_next = y + dt * (_B50 * k0 + _B52 * k2 + _B53 * k3 + _B54 * k4 + _B55 * k5)
+    return y_next
+
+
+@njit(cache=True)
+def _compute_states_kalman_kernel(
+    times: np.ndarray,
+    gyro_mask: np.ndarray,
+    star_mask: np.ndarray,
+    ctrl_mask: np.ndarray,
+    q_t_0: np.ndarray,
+    w_t_0: np.ndarray,
+    B_t_0: np.ndarray,
+    B_h_0: np.ndarray,
+    Pq: np.ndarray,
+    Pb: np.ndarray,
+    J: np.ndarray,
+    Ji: np.ndarray,
+    qc_arr: np.ndarray,
+    ct_int: int,
+    kp_val: float,
+    kd_val: float,
+    sigma_u: float,
+    sigma_v: float,
+    sigma_star_rad: float,
+    init_inaccuracy: float,
+    dt_truth: float,
+    simple_Phi: bool,
+    Joseph: bool,
+    rng_seed: int,
+    I3: np.ndarray,
+    H: np.ndarray,
+    R: np.ndarray,
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """Numba-accelerated core integrator for `compute_states_kalman`."""
+
+    n_steps = times.shape[0]
+    sqrt_dt = np.sqrt(dt_truth)
+
+    q_h_l = np.empty((4, n_steps))
+    w_h_l = np.empty((3, n_steps))
+    B_h_l = np.empty((3, n_steps))
+    B_t_l = np.empty((3, n_steps))
+    w_t_l = np.empty((3, n_steps))
+    q_t_l = np.empty((4, n_steps))
+    h_l = np.empty((3, n_steps))
+    L_l = np.empty((3, n_steps))
+    t_l = np.empty(n_steps)
+    G_l = np.empty(n_steps)
+    Z_d_l = np.empty((3, n_steps))
+    s_l = np.empty((6, n_steps))
+
+    np.random.seed(rng_seed)
+
+    q_t = q_t_0.copy()
+    w_t = w_t_0.copy()
+    B_t = B_t_0.copy()
+    B_h = B_h_0.copy()
+    q_h = q_t.copy()
+
+    if init_inaccuracy > 0.0:
+        Z_n = np.random.normal(0.0, sigma_star_rad * init_inaccuracy, 3)
+        Xi_q = k.Xi(q_t)
+        q_m_0 = q_t.reshape(-1, 1) + 0.5 * Xi_q @ Z_n.reshape(-1, 1)
+        q_m_0 = q_m_0.flatten()
+        norm_q = np.linalg.norm(q_m_0)
+        if norm_q > 0.0:
+            q_m_0 = q_m_0 / norm_q
+        q_h = q_m_0
+
+    w_h = w_t.copy()
+    w_drive = w_h.copy()
+    L = np.zeros(3)
+    h = np.zeros(3)
+
+    P = np.zeros((6, 6))
+    P[:3, :3] = Pq
+    P[3:, 3:] = Pb
+
+    q_d = k.quat_mul(q_t, qm.quat_inv(q_h))
+    Z_d = k.quat_to_rotvec(q_d)
+    G = np.linalg.norm(Z_d)
+
+    last_gyro_i = 0
+
+    for i in range(n_steps):
+        if i > 0:
+            y = np.empty(6)
+            y[:3] = w_t
+            y[3:] = h
+            y_prop = _rk45_kalman_step(y, dt_truth, J, Ji, L)
+            w_t = y_prop[:3]
+            h = y_prop[3:]
+            q_t = k.quat_propagate(q_t, w_t, dt_truth)
+            B_t = B_t + np.random.normal(0.0, sigma_u * sqrt_dt, 3)
+
+        if i > 0:
+            q_h = k.quat_propagate(q_h, w_drive, dt_truth)
+            Phi = k.Phi(dt_truth, w_drive, I3, simple_Phi)
+            Qk = k.Q(sigma_v, sigma_u, dt_truth, I3)
+            P = k.P_prop(P, Phi, Qk)
+
+        if gyro_mask[i] != 0:
+            if i > 0:
+                dt_g = times[i] - times[last_gyro_i]
+            else:
+                dt_g = dt_truth
+            if dt_g <= 0.0:
+                dt_g = dt_truth
+            gyro_sigma = sigma_v / np.sqrt(dt_g)
+            w_m = w_t + B_t + np.random.normal(0.0, gyro_sigma, 3)
+            w_drive = w_m - B_h
+            w_h = w_drive.copy()
+            last_gyro_i = i
+
+        if star_mask[i] != 0 and i > 0:
+            dZ_m = k.startracker_meas(q_t, q_h, sigma_star_rad, 3)
+            K, K_Z, K_B = k.K(P, H, R)
+            P = k.P_meas(K, H, P, R, Joseph)
+            dB_h = K_B @ dZ_m
+            dZ_h = K_Z @ dZ_m
+            B_h = B_h + dB_h
+
+            theta = np.linalg.norm(dZ_h)
+            if theta > 0.0:
+                axis = dZ_h / theta
+                dq_err = np.empty(4)
+                sin_half = np.sin(0.5 * theta)
+                dq_err[:3] = axis * sin_half
+                dq_err[3] = np.cos(0.5 * theta)
+            else:
+                dq_err = np.zeros(4)
+                dq_err[3] = 1.0
+            q_h = k.quat_mul(dq_err, q_h)
+            q_h = q_h / np.linalg.norm(q_h)
+
+            q_d = k.quat_mul(q_t, k.quat_inv(q_h))
+            Z_d = k.quat_to_rotvec(q_d)
+            G = np.linalg.norm(Z_d)
+
+        if i > 0 and ctrl_mask[i] != 0:
+            L = control_laws(w_h, q_h, qc_arr, ct_int, kp_val, kd_val)
+
+        for j in range(6):
+            s_l[j, i] = np.sqrt(P[j, j])
+
+        t_l[i] = times[i]
+        G_l[i] = G
+        q_h_l[:, i] = q_h
+        q_t_l[:, i] = q_t
+        Z_d_l[:, i] = Z_d
+        B_h_l[:, i] = B_h
+        B_t_l[:, i] = B_t
+        w_h_l[:, i] = w_h
+        w_t_l[:, i] = w_t
+        h_l[:, i] = h
+        L_l[:, i] = L
+
+    return (
+        t_l,
+        G_l,
+        q_h_l,
+        q_t_l,
+        Z_d_l,
+        B_h_l,
+        B_t_l,
+        s_l,
+        w_h_l,
+        w_t_l,
+        h_l,
+        L_l,
+    )
 
 
 def _map_control_type(control_type: object) -> int:
@@ -235,97 +496,174 @@ class Plant:
         Z_d_l = np.empty((3, n_steps))
         s_l = np.empty((6, n_steps))
 
-        q_t = self.q_t_0.copy()
-        B_t = self.B_t_0.copy()
-        B_h = self.B_h_0.copy()
-        w_t = self.w_t_0.copy()
-        q_h = q_h_0.copy()
-        w_h = self.w_t_0.copy()
-        w_drive = w_h.copy()
-        q_d = k.quat_mul(q_t, qm.quat_inv(q_h))
-        Z_d = k.quat_to_rotvec(q_d)
-        L = np.zeros(3)
-        h = np.zeros(3)
-        G = np.linalg.norm(Z_d)
-        P = np.block([[self.Pq, O3], [O3, self.Pb]])
+        gyro_mask = _build_event_mask(idx_gyro, n_steps)
+        star_mask = _build_event_mask(idx_star, n_steps)
+        ctrl_mask = _build_event_mask(idx_ctrl, n_steps)
 
-        last_gyro_i = 0
-        for i in range(n_steps):
-            if i > 0:
-                y = np.hstack((w_t, h))
-                y_prop, _, _ = int_step(state_deriv_kalman, y, self.dt_truth, self.J, self.Ji, L)
-                w_t = y_prop[:3]
-                h = y_prop[3:6]
-                q_t = k.quat_propagate(q_t, w_t, self.dt_truth)
-                B_t = B_t + np.random.normal(0, self.sigma_u * self.dt_truth ** 0.5, n)
+        if NUMBA_AVAILABLE:
+            (
+                t_l,
+                G_l,
+                q_h_l,
+                q_t_l,
+                Z_d_l,
+                B_h_l,
+                B_t_l,
+                s_l,
+                w_h_l,
+                w_t_l,
+                h_l,
+                L_l,
+            ) = _compute_states_kalman_kernel(
+                times,
+                gyro_mask,
+                star_mask,
+                ctrl_mask,
+                self.q_t_0,
+                self.w_t_0,
+                self.B_t_0,
+                self.B_h_0,
+                self.Pq,
+                self.Pb,
+                self.J,
+                self.Ji,
+                qc_arr,
+                ct_int,
+                kp_val,
+                kd_val,
+                self.sigma_u,
+                self.sigma_v,
+                self.sigma_startracker * ARCSEC_TO_RAD,
+                self.init_inaccuracy,
+                self.dt_truth,
+                self.simple_Phi,
+                self.Joseph,
+                self.rng_seed,
+                I3,
+                H,
+                R,
+            )
 
-            if i > 0:
-                q_h = k.quat_propagate(q_h, w_drive, self.dt_truth)
-                Phi = k.Phi(self.dt_truth, w_drive, I3, self.simple_Phi)
-                Qk = k.Q(self.sigma_v, self.sigma_u, self.dt_truth, I3)
-                P = k.P_prop(P, Phi, Qk)
+            return {
+                "t": t_l,
+                "G": G_l,
+                "q_h": q_h_l,
+                "q_t": q_t_l,
+                "Z_d": Z_d_l,
+                "B_h": B_h_l,
+                "B_t": B_t_l,
+                "B_d": B_t_l - B_h_l,
+                "s": s_l,
+                "w_h": w_h_l,
+                "w_t": w_t_l,
+                "h": h_l,
+                "L": L_l,
+            }
+        else:
+            q_h_l = np.empty((4, n_steps))
+            w_h_l = np.empty((3, n_steps))
+            B_h_l = np.empty((3, n_steps))
+            B_t_l = np.empty((3, n_steps))
+            w_t_l = np.empty((3, n_steps))
+            q_t_l = np.empty((4, n_steps))
+            h_l = np.empty((3, n_steps))
+            L_l = np.empty((3, n_steps))
+            t_l = np.empty(n_steps)
+            G_l = np.empty(n_steps)
+            Z_d_l = np.empty((3, n_steps))
+            s_l = np.empty((6, n_steps))
 
-            if i in idx_gyro:
-                dt_g = times[i] - times[last_gyro_i] if i > 0 else self.dt_truth
-                if dt_g <= 0:
-                    dt_g = self.dt_truth
-                w_m = w_t + B_t + np.random.standard_normal(n) * (self.sigma_v / np.sqrt(dt_g))
-                w_drive = w_m - B_h
-                w_h = w_drive.copy()
-                last_gyro_i = i
+            q_t = self.q_t_0.copy()
+            B_t = self.B_t_0.copy()
+            B_h = self.B_h_0.copy()
+            w_t = self.w_t_0.copy()
+            q_h = q_h_0.copy()
+            w_h = self.w_t_0.copy()
+            w_drive = w_h.copy()
+            q_d = k.quat_mul(q_t, qm.quat_inv(q_h))
+            Z_d = k.quat_to_rotvec(q_d)
+            L = np.zeros(3)
+            h = np.zeros(3)
+            G = np.linalg.norm(Z_d)
+            P = np.block([[self.Pq, O3], [O3, self.Pb]])
 
-            if i in idx_star and i > 0:
-                dZ_m = k.startracker_meas(q_t, q_h, self.sigma_startracker * ARCSEC_TO_RAD, n)
-                K, K_Z, K_B = k.K(P, H, R)
-                P = k.P_meas(K, H, P, R, self.Joseph)
-                dB_h = K_B @ dZ_m
-                dZ_h = K_Z @ dZ_m
-                B_h = B_h + dB_h
+            last_gyro_i = 0
+            for i in range(n_steps):
+                if i > 0:
+                    y = np.hstack((w_t, h))
+                    y_prop, _, _ = int_step(state_deriv_kalman, y, self.dt_truth, self.J, self.Ji, L)
+                    w_t = y_prop[:3]
+                    h = y_prop[3:6]
+                    q_t = k.quat_propagate(q_t, w_t, self.dt_truth)
+                    B_t = B_t + np.random.normal(0, self.sigma_u * self.dt_truth ** 0.5, n)
 
-                theta = np.linalg.norm(dZ_h)
-                if theta > 0:
-                    axis = dZ_h / theta
-                    dq_err = np.hstack((axis * np.sin(0.5 * theta), np.cos(0.5 * theta)))
-                else:
-                    dq_err = np.array([0.0, 0.0, 0.0, 1.0])
-                q_h = k.quat_mul(dq_err, q_h)
-                q_h = q_h / np.linalg.norm(q_h)
+                if i > 0:
+                    q_h = k.quat_propagate(q_h, w_drive, self.dt_truth)
+                    Phi = k.Phi(self.dt_truth, w_drive, I3, self.simple_Phi)
+                    Qk = k.Q(self.sigma_v, self.sigma_u, self.dt_truth, I3)
+                    P = k.P_prop(P, Phi, Qk)
 
-                q_d = k.quat_mul(q_t, k.quat_inv(q_h))
-                Z_d = k.quat_to_rotvec(q_d)
-                G = np.linalg.norm(Z_d)
+                if i in idx_gyro:
+                    dt_g = times[i] - times[last_gyro_i] if i > 0 else self.dt_truth
+                    if dt_g <= 0:
+                        dt_g = self.dt_truth
+                    w_m = w_t + B_t + np.random.standard_normal(n) * (self.sigma_v / np.sqrt(dt_g))
+                    w_drive = w_m - B_h
+                    w_h = w_drive.copy()
+                    last_gyro_i = i
 
-            if i > 0 and i in idx_ctrl:
-                L = control_laws(w_h, q_h, qc_arr, ct_int, kp_val, kd_val)
+                if i in idx_star and i > 0:
+                    dZ_m = k.startracker_meas(q_t, q_h, self.sigma_startracker * ARCSEC_TO_RAD, n)
+                    K, K_Z, K_B = k.K(P, H, R)
+                    P = k.P_meas(K, H, P, R, self.Joseph)
+                    dB_h = K_B @ dZ_m
+                    dZ_h = K_Z @ dZ_m
+                    B_h = B_h + dB_h
 
-            s_l[:, i] = np.sqrt(np.diag(P))
-            t_l[i] = times[i]
-            G_l[i] = G
-            q_h_l[:, i] = q_h
-            q_t_l[:, i] = q_t
-            Z_d_l[:, i] = Z_d
-            B_h_l[:, i] = B_h.flatten()
-            B_t_l[:, i] = B_t
-            w_h_l[:, i] = w_h
-            w_t_l[:, i] = w_t
-            h_l[:, i] = h
-            L_l[:, i] = L
+                    theta = np.linalg.norm(dZ_h)
+                    if theta > 0:
+                        axis = dZ_h / theta
+                        dq_err = np.hstack((axis * np.sin(0.5 * theta), np.cos(0.5 * theta)))
+                    else:
+                        dq_err = np.array([0.0, 0.0, 0.0, 1.0])
+                    q_h = k.quat_mul(dq_err, q_h)
+                    q_h = q_h / np.linalg.norm(q_h)
 
-        return {
-            "t": t_l,
-            "G": G_l,
-            "q_h": q_h_l,
-            "q_t": q_t_l,
-            "Z_d": Z_d_l,
-            "B_h": B_h_l,
-            "B_t": B_t_l,
-            "B_d": B_t_l - B_h_l,
-            "s": s_l,
-            "w_h": w_h_l,
-            "w_t": w_t_l,
-            "h": h_l,
-            "L": L_l,
-        }
+                    q_d = k.quat_mul(q_t, k.quat_inv(q_h))
+                    Z_d = k.quat_to_rotvec(q_d)
+                    G = np.linalg.norm(Z_d)
+
+                if i > 0 and i in idx_ctrl:
+                    L = control_laws(w_h, q_h, qc_arr, ct_int, kp_val, kd_val)
+
+                s_l[:, i] = np.sqrt(np.diag(P))
+                t_l[i] = times[i]
+                G_l[i] = G
+                q_h_l[:, i] = q_h
+                q_t_l[:, i] = q_t
+                Z_d_l[:, i] = Z_d
+                B_h_l[:, i] = B_h.flatten()
+                B_t_l[:, i] = B_t
+                w_h_l[:, i] = w_h
+                w_t_l[:, i] = w_t
+                h_l[:, i] = h
+                L_l[:, i] = L
+
+            return {
+                "t": t_l,
+                "G": G_l,
+                "q_h": q_h_l,
+                "q_t": q_t_l,
+                "Z_d": Z_d_l,
+                "B_h": B_h_l,
+                "B_t": B_t_l,
+                "B_d": B_t_l - B_h_l,
+                "s": s_l,
+                "w_h": w_h_l,
+                "w_t": w_t_l,
+                "h": h_l,
+                "L": L_l,
+            }
 
     # endregion
 
