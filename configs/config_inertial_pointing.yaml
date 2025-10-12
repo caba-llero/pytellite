@@ -6,7 +6,7 @@ simulation:
   rng_seed: 12345
   t_final: 5.0
   # Precomputation defaults for GUI playback
-  t_max: 300.0
+  t_max: 500.0
   playback_speed: 10.0
   sample_rate: 30.0
   rtol: 1.0e-12
@@ -59,6 +59,22 @@ control:
   kp: 50
   kd: 500
   qc: [0.0, 0.0, 0.0, 1.0]
+
+estimation:
+  enable_estimation: false
+  rng_seed: 42
+  gt_freq: 100.0
+  gyro_meas_freq: 10.0
+  star_meas_freq: 2.0
+  ctrl_freq: 0.5
+  gyro_arw: 3.0e-6
+  gyro_rrw: 3.0e-9
+  star_iso_acc: 3.0e-5
+  star_init_acc: 3.0e-5
+  gyro_true_bias: 5.0e-7
+  gyro_est_bias: 0.0
+  gyro_init_cov: 1.0e-12
+  attitude_init_cov: 9.0e-10
 
 initial_conditions:
   # ~500 km circular orbit around Earth, ECI position on x-axis.

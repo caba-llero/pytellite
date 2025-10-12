@@ -192,7 +192,7 @@
                             <label for="ENABLE_ESTIMATION" style="color: #d5dbe6; margin: 0; cursor: pointer; font-size: 14px;">Enable attitude estimation</label>
                         </div>
                         <div id="mekf-info" style="margin-top: 8px; color: #7c8796; font-size: 12px; line-height: 1.4; display: none;">
-                            The MEKF attitude estimator has some bugs and is currently disabled until I fix them. You can find the standalone MEKF algorithm I wrote here: <a href="https://github.com/caba-llero/Error-state-MEKF" target="_blank" style="color: #006896; text-decoration: none;">https://github.com/caba-llero/Error-state-MEKF</a>
+                            Read about the MEKF algorithm implemented in Pytellite here: <a href="https://github.com/caba-llero/Error-state-MEKF" target="_blank" style="color: #006896; text-decoration: none;">https://github.com/caba-llero/Error-state-MEKF</a>
                         </div>
                     </div>
 
@@ -261,6 +261,9 @@
                                     <label for="STAR_INIT_ACC">Isotropic accuracy of initial measurement</label>
                                     <input id="STAR_INIT_ACC" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                     <div class="units">rad</div>
+                                    <label for="ATTITUDE_INIT_COV">Initial attitude error covariance</label>
+                                    <input id="ATTITUDE_INIT_COV" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                    <div class="units">rad<sup>2</sup></div>
                                 </div>
                             </div>
                         </div>
@@ -353,34 +356,24 @@
 
                 <section class="tab-panel" data-tab="other" role="tabpanel">
                     <div class="section">
-                        <h3>Playback</h3>
+                        <h3>Simulation parameters</h3>
                         <div class="field-group">
                             <div class="li-grid">
-                                <label for="PLAY">Playback speed</label>
-                                <input id="PLAY" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units">×</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="group-spacer"></div>
-
-                    <div class="section">
-                        <h3>Integration</h3>
-                        <div class="field-group">
-                            <div class="li-grid">
-                                <label for="TMAX">Integration time</label>
+                                <label for="TMAX">Maximum simulation time</label>
                                 <input id="TMAX" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">s</div>
                                 <label for="SR">Sample rate</label>
                                 <input id="SR" class="text-input" type="text" inputmode="decimal" autocomplete="off">
                                 <div class="units">Hz</div>
+                                <label for="PLAYBACK_SPEED">Playback speed</label>
+                                <input id="PLAYBACK_SPEED" class="text-input" type="text" inputmode="decimal" autocomplete="off">
+                                <div class="units">x</div>
                                 <label for="RTOL">Relative tolerance</label>
                                 <input id="RTOL" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units">unitless</div>
+                                <div class="units"></div>
                                 <label for="ATOL">Absolute tolerance</label>
                                 <input id="ATOL" class="text-input" type="text" inputmode="decimal" autocomplete="off">
-                                <div class="units">unitless</div>
+                                <div class="units"></div>
                             </div>
                         </div>
                     </div>

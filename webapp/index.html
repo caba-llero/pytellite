@@ -24,60 +24,84 @@
         <div id="left-panel">
             <div id="logo-row">
                 <img src="/logo.png" alt="Logo" id="site-logo">
-                <button id="config-btn" class="config-btn" type="button">Change configuration</button>
+                <button id="config-btn" class="config-btn" type="button">Change config</button>
             </div>
             <div id="view-toggle" class="view-toggle" role="group" aria-label="View toggle">
                 <button class="toggle-segment active" data-view="attitude" aria-pressed="true">Attitude</button>
                 <button class="toggle-segment" data-view="orbit" aria-pressed="false">Orbit</button>
             </div>
             <div class="tabs" role="tablist">
-                <button class="tab active" data-tab="legend" role="tab" aria-selected="true">Legend</button>
+                <button class="tab active" data-tab="units" role="tab" aria-selected="true">Units</button>
                 <button class="tab" data-tab="plots" role="tab" aria-selected="false">Plots</button>
-                <button class="tab" data-tab="axes" role="tab" aria-selected="false">Axes</button>
                 <button class="tab" data-tab="other" role="tab" aria-selected="false">Other</button>
             </div>
             <div class="panels">
-                <section class="tab-panel active" data-tab="legend" role="tabpanel">
-                    <div id="legend">
-                        <div class="legend-section">
-                            <span class="legend-line solid"></span>
-                            <span class="legend-text">Inertial axes</span>
+                <section class="tab-panel active" data-tab="units" role="tabpanel">
+                    <div class="unit-selectors">
+                        <div class="unit-row">
+                            <label for="timeUnitSelect">Time</label>
+                            <select id="timeUnitSelect">
+                                <option value="s" selected>seconds</option>
+                                <option value="m">minutes</option>
+                                <option value="h">hours</option>
+                            </select>
                         </div>
-                        <div class="legend-section">
-                            <span class="legend-line dashed"></span>
-                            <span class="legend-text">Body axes</span>
+                        <div class="unit-row">
+                            <label for="angleUnitSelect">Angle</label>
+                            <select id="angleUnitSelect">
+                                <option value="rad" selected>rad</option>
+                                <option value="deg">degree</option>
+                            </select>
                         </div>
-                        <div class="legend-section legend-colors">
-                            <span class="legend-color x"></span><span class="legend-axis-label">X</span>
-                            <span class="legend-color y"></span><span class="legend-axis-label">Y</span>
-                            <span class="legend-color z"></span><span class="legend-axis-label">Z</span>
+                        <div class="unit-row">
+                            <label for="omegaUnitSelect">Angular velocity</label>
+                            <select id="omegaUnitSelect">
+                                <option value="rad" selected>rad/s</option>
+                                <option value="deg">deg/s</option>
+                                <option value="rad_h">rad/h</option>
+                                <option value="deg_h">deg/h</option>
+                            </select>
+                        </div>
+                        <div class="unit-row">
+                            <label for="momentumUnitSelect">Angular momentum</label>
+                            <select id="momentumUnitSelect">
+                                <option value="nms" selected>N·m·s</option>
+                            </select>
                         </div>
                     </div>
                 </section>
                 <section class="tab-panel" data-tab="plots" role="tabpanel">
-                    <div style="display:flex;flex-direction:column;gap:8px;padding:6px 2px;color:#cfd8e3;font-size:12px">
-                        <label for="timeUnitSelect">Time axis</label>
-                        <select id="timeUnitSelect" style="background:#12161b;color:#e6eefc;border:1px solid #1f242b;border-radius:6px;padding:6px 8px;">
-                            <option value="s" selected>seconds</option>
-                            <option value="m">minutes</option>
-                            <option value="h">hours</option>
-                        </select>
-                        <label for="omegaUnitSelect" style="margin-top:6px;">Angular velocity</label>
-                        <select id="omegaUnitSelect" style="background:#12161b;color:#e6eefc;border:1px solid #1f242b;border-radius:6px;padding:6px 8px;">
-                            <option value="rad" selected>rad/s</option>
-                            <option value="deg">deg/s</option>
-                        </select>
+                    <div class="plot-mode-selector" role="group" aria-label="Plot display mode">
+                        <label class="plot-mode-option">
+                            <input type="radio" name="plotMode" value="ground_truth" checked>
+                            <span>Ground truth</span>
+                        </label>
+                        <label class="plot-mode-option">
+                            <input type="radio" name="plotMode" value="estimate_errors" id="estimate_errors_radio">
+                            <span>Estimation errors</span>
+                        </label>
+                        <label class="plot-mode-option">
+                            <input type="radio" name="plotMode" value="pointing_error" disabled>
+                            <span>Pointing error</span>
+                        </label>
+                        <label class="plot-mode-option">
+                            <input type="radio" name="plotMode" value="gyro_bias" disabled>
+                            <span>Gyro bias</span>
+                        </label>
                     </div>
                 </section>
-                <section class="tab-panel" data-tab="axes" role="tabpanel"></section>
                 <section class="tab-panel" data-tab="other" role="tabpanel">
-                    <div id="sim-info" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
                     <div id="metrics" style="margin-top:8px;font-size:12px;color:#cfd8e3;line-height:1.4"></div>
                 </section>
             </div>
         </div>
         <div id="main-vis">
             <div id="renderer-container"></div>
+            <div class="floating-legend" id="floating-legend" aria-live="polite">
+                <div id="legend-content" class="legend-content"></div>
+                <div class="legend-instructions">Rotate view and zoom with mouse</div>
+            </div>
+            <div id="orbit-status" class="orbit-status" hidden>Orbit functionality under construction</div>
             <div id="playerControls" class="player-controls">
                 <button id="playPauseBtn" class="play-pause-btn" aria-label="Play/Pause">
                     <svg class="icon icon-play" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -92,10 +116,22 @@
             </div>
         </div>
         <div id="plots-container">
-            <div class="plot-column">
+            <div id="groundTruthPlots" class="plot-column plot-section">
                 <div id="quatPlot" class="plot-wrapper"></div>
                 <div id="omegaPlot" class="plot-wrapper"></div>
                 <div id="hPlot" class="plot-wrapper"></div>
+            </div>
+            <div id="errorPlots" class="plot-column plot-section hidden">
+                <div id="rotErrPlot" class="plot-wrapper"></div>
+                <div id="biasErrPlot" class="plot-wrapper"></div>
+            </div>
+            <div id="pointingErrorPlots" class="plot-column plot-section hidden">
+                <div id="pointingErrorPlot" class="plot-wrapper"></div>
+            </div>
+            <div id="gyroBiasPlots" class="plot-column plot-section hidden">
+                <div id="gyroBiasXPlot" class="plot-wrapper"></div>
+                <div id="gyroBiasYPlot" class="plot-wrapper"></div>
+                <div id="gyroBiasZPlot" class="plot-wrapper"></div>
             </div>
         </div>
     </div>

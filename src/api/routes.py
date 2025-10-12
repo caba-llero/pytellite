@@ -110,6 +110,52 @@ def _load_defaults() -> dict:
         return yaml.safe_load(f)
 
 
+def _resample_log_series(time_src: np.ndarray, series: np.ndarray, t_target: np.ndarray) -> np.ndarray:
+    """Resample a 1-D or 2-D time series to target timestamps via interpolation."""
+    series_arr = np.asarray(series)
+    if series_arr.ndim == 1:
+        return np.interp(t_target, time_src, series_arr)
+    if series_arr.ndim == 2:
+        return np.vstack([np.interp(t_target, time_src, row) for row in series_arr])
+    raise ValueError("Unsupported series dimensionality for resampling")
+
+
+def _build_error_payload(logs: dict[str, np.ndarray], sample_times: np.ndarray) -> dict[str, list]:
+    """Down-sample estimator logs so the frontend receives data aligned with playback samples."""
+    time_src = np.asarray(logs["t"])
+    t_target = np.asarray(sample_times)
+
+    Z_sampled = _resample_log_series(time_src, logs["Z_d"], t_target)
+    B_sampled = _resample_log_series(time_src, logs["B_d"], t_target)
+    B_true_sampled = _resample_log_series(time_src, logs["B_t"], t_target)  # True gyro bias
+    w_err_sampled = _resample_log_series(time_src, logs["w_t"] - logs["w_h"], t_target)
+    sigma_sampled = _resample_log_series(time_src, logs["s"], t_target)
+    G_sampled = _resample_log_series(time_src, logs["G"], t_target)
+    if "G_s" in logs:
+        G_sigma_sampled = _resample_log_series(time_src, logs["G_s"], t_target)
+    else:
+        G_sigma_sampled = np.zeros_like(G_sampled)
+
+    return {
+        "time": t_target.tolist(),
+        "Zdx": Z_sampled[0].tolist(),
+        "Zdy": Z_sampled[1].tolist(),
+        "Zdz": Z_sampled[2].tolist(),
+        "Bdx": B_sampled[0].tolist(),
+        "Bdy": B_sampled[1].tolist(),
+        "Bdz": B_sampled[2].tolist(),
+        "Btx": B_true_sampled[0].tolist(),  # True gyro bias X
+        "Bty": B_true_sampled[1].tolist(),  # True gyro bias Y
+        "Btz": B_true_sampled[2].tolist(),  # True gyro bias Z
+        "wErrX": w_err_sampled[0].tolist(),
+        "wErrY": w_err_sampled[1].tolist(),
+        "wErrZ": w_err_sampled[2].tolist(),
+        "sigma": sigma_sampled.tolist(),
+        "G": G_sampled.tolist(),
+        "G_sigma": G_sigma_sampled.tolist(),
+    }
+
+
 @router.get("/api/defaults")
 async def api_defaults():
     cfg = _load_defaults()
@@ -139,6 +185,7 @@ async def api_defaults():
             "kd": cfg.get("control", {}).get("kd", 0.0),
             "qc": cfg.get("control", {}).get("qc", [0.0, 0.0, 0.0, 1.0]),
         },
+        "estimation": cfg.get("estimation", {}),
     }
 
 @router.get("/api/presets")
@@ -208,7 +255,7 @@ def merge_with_defaults(payload: dict) -> dict:
         cfg["simulation"]["atol"] = atol
 
     # Control parameters (flat or nested)
-    ctrl_payload = payload.get("control", {}) if isinstance(payload.get("control"), dict) else payload
+    ctrl_payload = payload.get("control") if isinstance(payload.get("control"), dict) else payload
     
     control_type = ctrl_payload.get("control_type") or ctrl_payload.get("ctrl")
     kp = ctrl_payload.get("kp")
@@ -235,7 +282,42 @@ def merge_with_defaults(payload: dict) -> dict:
         cfg.setdefault("control", {})["kd"] = float(kd)
     if qc is not None:
         cfg.setdefault("control", {})["qc"] = qc
+
+    # Estimation parameters (flat or nested) override defaults when provided
+    estimation_payload = payload.get("estimation") if isinstance(payload.get("estimation"), dict) else None
+    if estimation_payload:
+        cfg.setdefault("estimation", {})
+        for key, value in estimation_payload.items():
+            if value is not None:
+                cfg["estimation"][key] = value
     return cfg
+
+
+def _calculate_pointing_error(q_truth: np.ndarray, q_control: np.ndarray) -> np.ndarray:
+    """Calculate pointing error angle between truth and control quaternions.
+    
+    Args:
+        q_truth: True attitude quaternion [4, n_timesteps]
+        q_control: Control quaternion [4, n_timesteps]
+        
+    Returns:
+        Pointing error angle in radians [n_timesteps]
+    """
+    # Ensure quaternions are normalized
+    q_truth_norm = q_truth / np.linalg.norm(q_truth, axis=0, keepdims=True)
+    q_control_norm = q_control / np.linalg.norm(q_control, axis=0, keepdims=True)
+    
+    # Calculate dot product between quaternions
+    dot_product = np.sum(q_truth_norm * q_control_norm, axis=0)
+    
+    # Clamp dot product to [-1, 1] to handle numerical errors
+    dot_product = np.clip(dot_product, -1.0, 1.0)
+    
+    # Calculate angle: 2 * arccos(|q_true . q_control|)
+    # Use absolute value to handle quaternion double cover
+    angle = 2.0 * np.arccos(np.abs(dot_product))
+    
+    return angle
 
 
 def _bytes_human(n: int) -> str:
@@ -263,14 +345,15 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
         playback_speed = float(sim.get("playback_speed", 1.0))
         sample_rate = float(sim.get("sample_rate", 30.0))
         
-        # Control
         ctrl = sim_config.get("control", {})
         control_type = ctrl.get("control_type")
         kp = float(ctrl.get("kp", 0.0))
         kd = float(ctrl.get("kd", 0.0))
         qc_list = ctrl.get("qc")
 
-        # Prepare arguments for compute_states
+        estimation_cfg = sim_config.get("estimation", {})
+        estimation_enabled = bool(estimation_cfg.get("enable_estimation", False))
+
         args = {"t_max": t_max, "rtol": rtol, "atol": atol}
         if control_type is not None and qc_list:
             args["control_type"] = control_type
@@ -279,9 +362,25 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             args["qc"] = np.array(qc_list, dtype=float)
 
         t0 = time.perf_counter()
-        t, y = plant.compute_states(**args)
+        solver_bytes = 0
+        if not estimation_enabled:
+            t, y = plant.compute_states(**args)
+            q_truth = y[9:13]
+            w_truth = y[6:9]
+            h_truth = y[13:16]
+            solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
+        else:
+            logs = plant.compute_states_kalman(**args)
+            t = logs["t"]
+            q_truth = logs["q_t"]
+            w_truth = logs["w_t"]
+            h_truth = logs.get("h") if "h" in logs else np.zeros_like(q_truth[:3])
+        solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(q_truth, 'nbytes', 0) + getattr(w_truth, 'nbytes', 0))
+
         t_compute = time.perf_counter() - t0
-        t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+        rv_stack = np.vstack((np.repeat(plant.r0.reshape(3, 1), t.shape[0], axis=1), np.repeat(plant.v0.reshape(3, 1), t.shape[0], axis=1)))
+        y_truth = np.vstack((rv_stack, w_truth, q_truth, h_truth))
+        t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y_truth, playback_speed=playback_speed, sample_rate=sample_rate)
         # Quaternion components (scalar last): qx, qy, qz, qw
         qx_arr = q_s[0, :].tolist()
         qy_arr = q_s[1, :].tolist()
@@ -301,6 +400,13 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             theta0_rad = 0.0
             spin_rate = 7.2921151e-5
 
+        # Calculate pointing error if control is active
+        pointing_error = None
+        if control_type is not None and control_type != "none" and qc_list:
+            qc_arr = np.array(qc_list, dtype=float)
+            qc_sampled = np.tile(qc_arr.reshape(-1, 1), (1, len(t_s)))
+            pointing_error = _calculate_pointing_error(q_s, qc_sampled)
+
         dataset = {
             "t": t_s.tolist(),
             "qx": qx_arr,
@@ -318,10 +424,13 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             "earth_initial_sidereal_angle_rad": theta0_rad,
             "earth_spin_rate_radps": spin_rate,
         }
+        
+        # Add pointing error if available
+        if pointing_error is not None:
+            dataset["pointing_error_rad"] = pointing_error.tolist()
+            dataset["control_type"] = control_type
         # Metrics
         num_steps = int(t.shape[0])
-        # Low-overhead memory proxy: raw solver arrays size (pre-JSON)
-        solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
         time_per_step = (t_compute / num_steps) if num_steps > 0 else 0.0
         metrics = {
             "compute_time_s": t_compute,
@@ -330,7 +439,10 @@ async def api_compute(config: dict = Body(default={})):  # type: ignore[assignme
             "solver_state_size_bytes": solver_bytes,
             "solver_state_size_readable": _bytes_human(solver_bytes),
         }
-        return {"dataset": dataset, "metrics": metrics}
+        response = {"dataset": dataset, "metrics": metrics}
+        if estimation_enabled and logs is not None:
+            response["errors"] = _build_error_payload(logs, t_s)
+        return response
     except Exception as e:
         logging.error(traceback.format_exc())
         return {"error": str(e)}
@@ -403,10 +515,30 @@ async def websocket_endpoint(websocket: WebSocket):
                 args["kd"] = kd
                 args["qc"] = np.array(qc_list, dtype=float)
 
+            estimation_cfg = sim_config.get("estimation", {})
+            estimation_enabled = bool(estimation_cfg.get("enable_estimation", False))
+
             t0 = time.perf_counter()
-            t, y = plant.compute_states(**args)
+            if estimation_enabled:
+                logs = plant.compute_states_kalman(**args)
+                t = logs["t"]
+                q_truth = logs["q_t"]
+                w_truth = logs["w_t"]
+                h_truth = logs.get("h") if "h" in logs else np.zeros_like(q_truth[:3])
+            else:
+                logs = None
+                t, y = plant.compute_states(**args)
+                q_truth = y[9:13]
+                w_truth = y[6:9]
+                h_truth = y[13:16]
             t_compute = time.perf_counter() - t0
-            t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+
+            if not estimation_enabled:
+                t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y, playback_speed=playback_speed, sample_rate=sample_rate)
+            else:
+                rv_stack = np.vstack((np.repeat(plant.r0.reshape(3, 1), t.shape[0], axis=1), np.repeat(plant.v0.reshape(3, 1), t.shape[0], axis=1)))
+                y_truth = np.vstack((rv_stack, w_truth, q_truth, h_truth))
+                t_s, r_s, v_s, eul_s, w_s, q_s, h_s = plant.evaluate_gui(t, y_truth, playback_speed=playback_speed, sample_rate=sample_rate)
             # Quaternion components (scalar last): qx, qy, qz, qw
             qx_arr = q_s[0, :].tolist()
             qy_arr = q_s[1, :].tolist()
@@ -423,6 +555,19 @@ async def websocket_endpoint(websocket: WebSocket):
             except Exception:
                 theta0_rad = 0.0
                 spin_rate = 7.2921151e-5
+
+            # Calculate pointing error if control is active
+            pointing_error = None
+            if control_type is not None and control_type != "none" and qc_list:
+                qc_arr = np.array(qc_list, dtype=float)
+                if estimation_enabled and "q_c" in logs:
+                    # For estimation enabled, interpolate control quaternion to sampled times
+                    qc_sampled = np.tile(qc_arr.reshape(-1, 1), (1, len(t_s)))
+                    pointing_error = _calculate_pointing_error(q_s, qc_sampled)
+                elif not estimation_enabled:
+                    # For regular simulation, interpolate control quaternion to sampled times
+                    qc_sampled = np.tile(qc_arr.reshape(-1, 1), (1, len(t_s)))
+                    pointing_error = _calculate_pointing_error(q_s, qc_sampled)
 
             dataset = {
                 "t": t_s.tolist(),
@@ -441,9 +586,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 "earth_initial_sidereal_angle_rad": theta0_rad,
                 "earth_spin_rate_radps": spin_rate,
             }
+            
+            # Add pointing error if available
+            if pointing_error is not None:
+                dataset["pointing_error_rad"] = pointing_error.tolist()
+                dataset["control_type"] = control_type
             # Metrics
             num_steps = int(t.shape[0])
-            solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
+            if estimation_enabled:
+                solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(q_truth, 'nbytes', 0) + getattr(w_truth, 'nbytes', 0))
+            else:
+                solver_bytes = int(getattr(t, 'nbytes', 0) + getattr(y, 'nbytes', 0))
             time_per_step = (t_compute / num_steps) if num_steps > 0 else 0.0
             metrics = {
                 "compute_time_s": t_compute,
@@ -452,7 +605,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 "solver_state_size_bytes": solver_bytes,
                 "solver_state_size_readable": _bytes_human(solver_bytes),
             }
-            await websocket.send_text(json.dumps({"dataset": dataset, "metrics": metrics}))
+            response = {"dataset": dataset, "metrics": metrics}
+            if estimation_enabled and logs is not None:
+                response["errors"] = _build_error_payload(logs, t_s)
+            await websocket.send_text(json.dumps(response))
         except Exception as e:
             logging.error(traceback.format_exc())
             await websocket.send_text(json.dumps({"error": str(e)}))

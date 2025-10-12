@@ -1,4 +1,4 @@
-name: Intermediate axis instability
+name: Fine pointing with attitude estimation
 simulation:
   dt_sim: 0.1
   time_scale: 100.0
@@ -6,8 +6,8 @@ simulation:
   rng_seed: 12345
   t_final: 5.0
   # Precomputation defaults for GUI playback
-  t_max: 50.0
-  playback_speed: 1.0
+  t_max: 600.0
+  playback_speed: 100.0
   sample_rate: 30.0
   rtol: 1.0e-12
   atol: 1.0e-12
@@ -55,25 +55,25 @@ logging:
 
 # Default control parameters
 control:
-  control_type: none # none | tracking (inertial pointing)
-  kp: 0.0
-  kd: 0.0
+  control_type: nonlinear_tracking # none | tracking (inertial pointing)
+  kp: 10.0
+  kd: 250.0
   qc: [0.0, 0.0, 0.0, 1.0]
 
 estimation:
-  enable_estimation: false
+  enable_estimation: true
   rng_seed: 42
-  gt_freq: 1.0
-  gyro_meas_freq: 100.0
-  star_meas_freq: 1.0
-  ctrl_freq: 1.0
-  gyro_arw: 3.0e-6
+  gt_freq: 20.0
+  gyro_meas_freq: 10.0
+  star_meas_freq: 0.5
+  ctrl_freq: 0.5
+  gyro_arw: 0.0000035
   gyro_rrw: 3.0e-9
   star_iso_acc: 3.0e-5
-  star_init_acc: 0.0
-  gyro_true_bias: 5.0e-7
-  gyro_est_bias: 5.0e-7
-  gyro_init_cov: 1.0e-12
+  star_init_acc: 3.0e-5
+  gyro_true_bias: 2.4e-7
+  gyro_est_bias: 0
+  gyro_init_cov: 1e-10
   attitude_init_cov: 9.0e-10
 
 initial_conditions:
@@ -88,13 +88,13 @@ initial_conditions:
   # Orbit frame initial conditions
   # q_ob: quaternion from orbit frame to body frame.
   # A 45 deg rotation over the x-axis.
-  q_ob: [0.38268, 0.0, 0.0, 0.92388]
+  q_ob: [-0.0174, -0.0175, 0.036, 0.999]
   # omega_bo_radps: angular velocity of body wrt orbit frame, in body frame [rad/s]
-  omega_bo_radps: [0.2, -0.1, 0.3]
+  omega_bo_radps: [0.0001, 0.00005, 0.00003]
 
   # Inertial frame initial conditions
-  q_bi: [0, 0, 0, 1]
-  omega_bi_radps: [0.01, 5, 0.01]
+  q_bi: [-0.0174, -0.0175, 0.036, 0.999]
+  omega_bi_radps: [0.0001, 0.00005, 0.00003]
 
   # Orbit elements for UI defaults
   orbit:

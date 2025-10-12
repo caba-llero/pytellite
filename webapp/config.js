@@ -157,8 +157,8 @@ async function init() {
     setValue('AOP', aop);
     setValue('TA', ta);
     setValue('TMAX', tmax);
-    setValue('PLAY', play);
     setValue('SR', sr);
+    setValue('PLAYBACK_SPEED', play);
     setValue('RTOL', rtol);
     setValue('ATOL', atol);
     // Control fields
@@ -169,16 +169,21 @@ async function init() {
         const show = (ctrlType === 'inertial_linear' || ctrlType === 'inertial_nonlinear');
         ctrlParams.style.display = show ? '' : 'none';
     }
-    setValue('KP', kp);
-    setValue('KD', kd);
-    setValue('CQ0', cq0);
-    setValue('CQ1', cq1);
-    setValue('CQ2', cq2);
-    setValue('CQ3', cq3);
+        setValue('KP', kp);
+        setValue('KD', kd);
+        setValue('CQ0', cq0);
+        setValue('CQ1', cq1);
+        setValue('CQ2', cq2);
+        setValue('CQ3', cq3);
 
-    // Estimation defaults
-    const estimation = saved.estimation || defaults.estimation || {};
-    const enableEstimation = estimation.enable_estimation || false;
+    // Estimation defaults - prioritize server defaults over localStorage for enable_estimation
+    const mergedEstimation = {
+        ...(defaults.estimation || {}),
+        ...(saved.estimation || {})
+    };
+    // For enable_estimation specifically, always use the server default from config file
+    // to ensure that config files load with their intended estimation state
+    const enableEstimation = Boolean(defaults.estimation?.enable_estimation ?? false);
     const estimationCheckbox = document.getElementById('ENABLE_ESTIMATION');
     if (estimationCheckbox) {
         estimationCheckbox.checked = enableEstimation;
@@ -192,19 +197,21 @@ async function init() {
     if (mekfInfo) {
         mekfInfo.style.display = enableEstimation ? 'block' : 'none';
     }
-    // Set default values for estimation parameters
-    setValue('CTRL_FREQ', estimation.ctrl_freq ?? 100.0);
-    setValue('GT_FREQ', estimation.gt_freq ?? 1000.0);
-    setValue('RNG_SEED', estimation.rng_seed ?? 42);
-    setValue('GYRO_MEAS_FREQ', estimation.gyro_meas_freq ?? 100.0);
-    setValue('GYRO_ARW', estimation.gyro_arw ?? 0.0);
-    setValue('GYRO_RRW', estimation.gyro_rrw ?? 0.0);
-    setValue('GYRO_TRUE_BIAS', estimation.gyro_true_bias ?? 0.0);
-    setValue('GYRO_EST_BIAS', estimation.gyro_est_bias ?? 0.0);
-    setValue('GYRO_INIT_COV', estimation.gyro_init_cov ?? 0.0);
-    setValue('STAR_MEAS_FREQ', estimation.star_meas_freq ?? 1.0);
-    setValue('STAR_ISO_ACC', estimation.star_iso_acc ?? 0.0);
-    setValue('STAR_INIT_ACC', estimation.star_init_acc ?? 0.0);
+    // Set default values for estimation parameters from server defaults
+    const estimationValues = mergedEstimation;
+    setValue('CTRL_FREQ', estimationValues.ctrl_freq);
+    setValue('GT_FREQ', estimationValues.gt_freq);
+    setValue('RNG_SEED', estimationValues.rng_seed ?? 42);
+    setValue('GYRO_MEAS_FREQ', estimationValues.gyro_meas_freq);
+    setValue('GYRO_ARW', estimationValues.gyro_arw);
+    setValue('GYRO_RRW', estimationValues.gyro_rrw);
+    setValue('GYRO_TRUE_BIAS', estimationValues.gyro_true_bias);
+    setValue('GYRO_EST_BIAS', estimationValues.gyro_est_bias);
+    setValue('GYRO_INIT_COV', estimationValues.gyro_init_cov);
+    setValue('STAR_MEAS_FREQ', estimationValues.star_meas_freq);
+    setValue('STAR_ISO_ACC', estimationValues.star_iso_acc);
+    setValue('STAR_INIT_ACC', estimationValues.star_init_acc);
+    setValue('ATTITUDE_INIT_COV', estimationValues.attitude_init_cov);
 
     // Tabs behavior
     const tabs = document.querySelectorAll('.tab');
@@ -228,7 +235,7 @@ async function init() {
             sx: readNumber('SX'), sy: readNumber('SY'), sz: readNumber('SZ'),
             wx: readNumber('WX'), wy: readNumber('WY'), wz: readNumber('WZ'),
             qx: readNumber('QX'), qy: readNumber('QY'), qz: readNumber('QZ'), qw: readNumber('QW'),
-            tmax: readNumber('TMAX'), play: readNumber('PLAY'), sr: readNumber('SR'),
+        tmax: readNumber('TMAX'), sr: readNumber('SR'), play: readNumber('PLAYBACK_SPEED'),
             rtol: readNumber('RTOL'), atol: readNumber('ATOL'),
             // control params in query string
             ctrl: document.getElementById('CTRL_TYPE')?.value || 'none',
@@ -250,7 +257,8 @@ async function init() {
                 gyro_init_cov: readNumber('GYRO_INIT_COV'),
                 star_meas_freq: readNumber('STAR_MEAS_FREQ'),
                 star_iso_acc: readNumber('STAR_ISO_ACC'),
-                star_init_acc: readNumber('STAR_INIT_ACC')
+                star_init_acc: readNumber('STAR_INIT_ACC'),
+                attitude_init_cov: readNumber('ATTITUDE_INIT_COV')
             })
         };
         // persist selections
@@ -290,7 +298,8 @@ async function init() {
                 gyro_init_cov: params.gyro_init_cov,
                 star_meas_freq: params.star_meas_freq,
                 star_iso_acc: params.star_iso_acc,
-                star_init_acc: params.star_init_acc
+                star_init_acc: params.star_init_acc,
+                attitude_init_cov: params.attitude_init_cov
             }
         };
         localStorage.setItem('sim_config', JSON.stringify(persisted));
@@ -320,6 +329,10 @@ async function init() {
             if (mekfInfo) {
                 mekfInfo.style.display = estimationCheckbox2.checked ? 'block' : 'none';
             }
+            
+            // Update estimation errors radio button state in the main simulation page
+            // Store the estimation state for the simulation page to read
+            localStorage.setItem('estimation_enabled', estimationCheckbox2.checked.toString());
         });
 
         // Trigger initial state
@@ -393,8 +406,8 @@ async function init() {
                 if (pkep.argument_of_the_perigee_deg !== undefined) setValue('AOP', pkep.argument_of_the_perigee_deg);
                 if (pkep.true_anomaly_deg !== undefined) setValue('TA', pkep.true_anomaly_deg);
                 if (sim.t_max !== undefined) setValue('TMAX', sim.t_max);
-                if (sim.playback_speed !== undefined) setValue('PLAY', sim.playback_speed);
                 if (sim.sample_rate !== undefined) setValue('SR', sim.sample_rate);
+                if (sim.playback_speed !== undefined) setValue('PLAYBACK_SPEED', sim.playback_speed);
                 if (sim.rtol !== undefined) setValue('RTOL', sim.rtol);
                 if (sim.atol !== undefined) setValue('ATOL', sim.atol);
                 const ctrlSelect3 = document.getElementById('CTRL_TYPE');
@@ -422,6 +435,44 @@ async function init() {
                 if (qc[1] !== undefined) setValue('CQ1', qc[1]);
                 if (qc[2] !== undefined) setValue('CQ2', qc[2]);
                 if (qc[3] !== undefined) setValue('CQ3', qc[3]);
+                
+                // Handle estimation section
+                const est = cfg.estimation || {};
+                const enableEstimationCheckbox = document.getElementById('ENABLE_ESTIMATION');
+                const estimationSettings = document.getElementById('estimation-settings');
+                const mekfInfo = document.getElementById('mekf-info');
+                
+                if (enableEstimationCheckbox) {
+                    const isEnabled = Boolean(est.enable_estimation);
+                    enableEstimationCheckbox.checked = isEnabled;
+                    
+                    // Show/hide estimation settings and MEKF info
+                    if (estimationSettings) {
+                        estimationSettings.style.display = isEnabled ? 'block' : 'none';
+                    }
+                    if (mekfInfo) {
+                        mekfInfo.style.display = isEnabled ? 'block' : 'none';
+                    }
+                    
+                    // Trigger change event to ensure any other listeners are notified
+                    enableEstimationCheckbox.dispatchEvent(new Event('change'));
+                }
+                
+                // Set estimation parameter values
+                if (est.ctrl_freq !== undefined) setValue('CTRL_FREQ', est.ctrl_freq);
+                if (est.gt_freq !== undefined) setValue('GT_FREQ', est.gt_freq);
+                setValue('RNG_SEED', est.rng_seed ?? 42);
+                if (est.gyro_meas_freq !== undefined) setValue('GYRO_MEAS_FREQ', est.gyro_meas_freq);
+                if (est.gyro_arw !== undefined) setValue('GYRO_ARW', est.gyro_arw);
+                if (est.gyro_rrw !== undefined) setValue('GYRO_RRW', est.gyro_rrw);
+                if (est.gyro_true_bias !== undefined) setValue('GYRO_TRUE_BIAS', est.gyro_true_bias);
+                if (est.gyro_est_bias !== undefined) setValue('GYRO_EST_BIAS', est.gyro_est_bias);
+                if (est.gyro_init_cov !== undefined) setValue('GYRO_INIT_COV', est.gyro_init_cov);
+                if (est.star_meas_freq !== undefined) setValue('STAR_MEAS_FREQ', est.star_meas_freq);
+                if (est.star_iso_acc !== undefined) setValue('STAR_ISO_ACC', est.star_iso_acc);
+                if (est.star_init_acc !== undefined) setValue('STAR_INIT_ACC', est.star_init_acc);
+                if (est.attitude_init_cov !== undefined) setValue('ATTITUDE_INIT_COV', est.attitude_init_cov);
+                
             } catch (e) {
                 console.warn('Failed to load preset', e);
             }

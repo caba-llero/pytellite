@@ -1,0 +1,260 @@
+warning: in the working copy of 'webapp/script.js', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/webapp/script.js b/webapp/script.js[m
+[1mindex 04df2f8..f480466 100644[m
+[1m--- a/webapp/script.js[m
+[1m+++ b/webapp/script.js[m
+[36m@@ -229,6 +229,7 @@[m [mfunction setPlotMode(mode, { syncRadios = true, refresh = true, persistRequest =[m
+             errorPlotsUnavailable.setAttribute('aria-hidden', 'true');[m
+         }[m
+         rebuildSeriesUpTo(frameIndex);[m
+[32m+[m[32m        updateRotationVectorAxisTitle();[m
+     }[m
+ }[m
+ [m
+[36m@@ -240,6 +241,7 @@[m [mplotModeInputs.forEach(input => {[m
+ });[m
+ [m
+ setPlotMode(currentPlotMode, { syncRadios: true, refresh: false });[m
+[32m+[m[32mupdateRotationVectorAxisTitle();[m
+ [m
+ function getTimeFactor() {[m
+     const unit = (timeUnitSelect && timeUnitSelect.value) || 's';[m
+[36m@@ -255,11 +257,79 @@[m [mfunction getTimeUnitLabel() {[m
+     return 's';[m
+ }[m
+ [m
+[32m+[m[32mfunction getAngleFactor() {[m
+[32m+[m[32m    const unit = (angleUnitSelect && angleUnitSelect.value) || 'rad';[m
+[32m+[m[32m    if (unit === 'deg') return 180 / Math.PI;[m
+[32m+[m[32m    return 1;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mfunction getAngleUnitLabel() {[m
+[32m+[m[32m    const unit = (angleUnitSelect && angleUnitSelect.value) || 'rad';[m
+[32m+[m[32m    return unit === 'deg' ? 'deg' : 'rad';[m
+[32m+[m[32m}[m
+[32m+[m
+ function getOmegaFactor() {[m
+     const unit = (omegaUnitSelect && omegaUnitSelect.value) || 'rad';[m
+     return unit === 'deg' ? (180/Math.PI) : 1;[m
+ }[m
+ [m
+[32m+[m[32mconst rotationVectorCache = { x: [], y: [], z: [] };[m
+[32m+[m
+[32m+[m[32mfunction resetRotationVectorCache() {[m
+[32m+[m[32m    rotationVectorCache.x.length = 0;[m
+[32m+[m[32m    rotationVectorCache.y.length = 0;[m
+[32m+[m[32m    rotationVectorCache.z.length = 0;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mfunction quaternionToRotationVector(qx, qy, qz, qw) {[m
+[32m+[m[32m    const EPS = 1e-12;[m
+[32m+[m[32m    let vx = Number(qx ?? 0);[m
+[32m+[m[32m    let vy = Number(qy ?? 0);[m
+[32m+[m[32m    let vz = Number(qz ?? 0);[m
+[32m+[m[32m    let qs = Number(qw ?? 0);[m
+[32m+[m[32m    const qNormSq = vx * vx + vy * vy + vz * vz + qs * qs;[m
+[32m+[m[32m    if (qNormSq <= EPS * EPS) {[m
+[32m+[m[32m        return [0, 0, 0];[m
+[32m+[m[32m    }[m
+[32m+[m[32m    const invNorm = 1 / Math.sqrt(qNormSq);[m
+[32m+[m[32m    vx *= invNorm;[m
+[32m+[m[32m    vy *= invNorm;[m
+[32m+[m[32m    vz *= invNorm;[m
+[32m+[m[32m    qs *= invNorm;[m
+[32m+[m[32m    const vNorm = Math.sqrt(vx * vx + vy * vy + vz * vz);[m
+[32m+[m[32m    if (vNorm < EPS) {[m
+[32m+[m[32m        return [0, 0, 0];[m
+[32m+[m[32m    }[m
+[32m+[m[32m    const angle = 2 * Math.atan2(vNorm, qs);[m
+[32m+[m[32m    const scale = angle / vNorm;[m
+[32m+[m[32m    return [vx * scale, vy * scale, vz * scale];[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mfunction ensureRotationVectorUpTo(index) {[m
+[32m+[m[32m    if (!dataset || index < 0) return;[m
+[32m+[m[32m    const maxValidIndex = Math.min([m
+[32m+[m[32m        index,[m
+[32m+[m[32m        (dataset.qx?.length ?? 0) - 1,[m
+[32m+[m[32m        (dataset.qy?.length ?? 0) - 1,[m
+[32m+[m[32m        (dataset.qz?.length ?? 0) - 1,[m
+[32m+[m[32m        (dataset.qw?.length ?? 0) - 1[m
+[32m+[m[32m    );[m
+[32m+[m[32m    if (!Number.isFinite(maxValidIndex) || maxValidIndex < 0) return;[m
+[32m+[m[32m    for (let i = rotationVectorCache.x.length; i <= maxValidIndex; i++) {[m
+[32m+[m[32m        const rv = quaternionToRotationVector(dataset.qx[i], dataset.qy[i], dataset.qz[i], dataset.qw[i]);[m
+[32m+[m[32m        rotationVectorCache.x[i] = rv[0];[m
+[32m+[m[32m        rotationVectorCache.y[i] = rv[1];[m
+[32m+[m[32m        rotationVectorCache.z[i] = rv[2];[m
+[32m+[m[32m    }[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mfunction updateRotationVectorAxisTitle() {[m
+[32m+[m[32m    if (typeof Plotly === 'undefined') return;[m
+[32m+[m[32m    const plotDiv = document.getElementById('quatPlot');[m
+[32m+[m[32m    if (!plotDiv || !plotDiv.data || !plotDiv.data.length) return;[m
+[32m+[m[32m    Plotly.relayout(plotDiv, { 'yaxis.title.text': `Rotation vector` });[m
+[32m+[m[32m}[m
+[32m+[m
+ function createMultiTraceChart(divId, yAxisTitle, traces) {[m
+     try {[m
+     if (typeof Plotly === 'undefined') return;[m
+[36m@@ -288,17 +358,18 @@[m [mfunction rebuildSeriesUpTo(index) {[m
+     if (!dataset || typeof Plotly === 'undefined') return;[m
+     const i = Math.min(index, dataset.t.length - 1);[m
+     const tf = getTimeFactor();[m
+[32m+[m[32m    const af = getAngleFactor();[m
+     const of = getOmegaFactor();[m
+     const xArr = dataset.t.slice(0, i + 1).map(t => t * tf);[m
+[32m+[m[32m    ensureRotationVectorUpTo(i);[m
+     const restyleMulti = (id, yArrays) => {[m
+         const xs = yArrays.map(() => xArr);[m
+         Plotly.restyle(id, { x: xs, y: yArrays }, [0,1,2,3].slice(0, yArrays.length));[m
+     };[m
+     restyleMulti('quatPlot', [[m
+[31m-        dataset.qx.slice(0, i + 1),[m
+[31m-        dataset.qy.slice(0, i + 1),[m
+[31m-        dataset.qz.slice(0, i + 1),[m
+[31m-        dataset.qw.slice(0, i + 1)[m
+[32m+[m[32m        rotationVectorCache.x.slice(0, i + 1).map(v => v * af),[m
+[32m+[m[32m        rotationVectorCache.y.slice(0, i + 1).map(v => v * af),[m
+[32m+[m[32m        rotationVectorCache.z.slice(0, i + 1).map(v => v * af)[m
+     ]);[m
+     restyleMulti('omegaPlot', [[m
+         dataset.p.slice(0, i + 1).map(v => v * of),[m
+[36m@@ -323,7 +394,7 @@[m [mfunction redrawErrorPlots(index) {[m
+     const tf = getTimeFactor();[m
+     const rawTimes = estimatorTimes.slice(0, i + 1).map(t => Number(t ?? 0));[m
+     const timeSlice = rawTimes.map(t => t * tf);[m
+[31m-    const plotError = (plotId, components, sigmaIndices, yAxisTitle, valueTransform = (x) => x) => {[m
+[32m+[m[32m    const plotError = (plotId, components, sigmaIndices, yAxisTitle, valueTransform = (x) => x, extraTracesBuilder = null) => {[m
+         const traces = [];[m
+         components.forEach((comp) => {[m
+             const series = errorData[comp.key];[m
+[36m@@ -367,6 +438,16 @@[m [mfunction redrawErrorPlots(index) {[m
+                 });[m
+             });[m
+         }[m
+[32m+[m[32m        if (typeof extraTracesBuilder === 'function') {[m
+[32m+[m[32m            const extra = extraTracesBuilder(timeSlice, valueTransform);[m
+[32m+[m[32m            if (Array.isArray(extra)) {[m
+[32m+[m[32m                extra.forEach(trace => {[m
+[32m+[m[32m                    if (trace && trace.x && trace.y) {[m
+[32m+[m[32m                        traces.push(trace);[m
+[32m+[m[32m                    }[m
+[32m+[m[32m                });[m
+[32m+[m[32m            }[m
+[32m+[m[32m        }[m
+         if (!traces.length) {[m
+             Plotly.react(plotId, [], { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)' });[m
+             return;[m
+[36m@@ -394,11 +475,44 @@[m [mfunction redrawErrorPlots(index) {[m
+         { key: 'Bdz', color: '#0000ff', label: 'B_d,z' }[m
+     ], [3, 4, 5], 'Gyro bias error', (v) => v * getOmegaFactor());[m
+ [m
+[31m-    plotError('wErrPlot', [[m
+[31m-        { key: 'wErrX', color: '#ff0000', label: 'ω error x' },[m
+[31m-        { key: 'wErrY', color: '#00ff00', label: 'ω error y' },[m
+[31m-        { key: 'wErrZ', color: '#0000ff', label: 'ω error z' }[m
+[31m-    ], null, 'Angular velocity error', (v) => v * getOmegaFactor());[m
+[32m+[m[32m    plotError('gErrPlot', [[m
+[32m+[m[32m        { key: 'G', color: '#ffff00', label: '|Z_d|' }[m
+[32m+[m[32m    ], null, 'Pointing accuracy', (v) => v * getAngleFactor(), (xs, transform) => {[m
+[32m+[m[32m        const gSigma = Array.isArray(errorData.G_sigma) ? errorData.G_sigma : null;[m
+[32m+[m[32m        const gSeries = Array.isArray(errorData.G) ? errorData.G : null;[m
+[32m+[m[32m        if (!gSigma || !gSeries) return [];[m
+[32m+[m[32m        const len = Math.min(xs.length, gSigma.length, gSeries.length);[m
+[32m+[m[32m        if (len === 0) return [];[m
+[32m+[m[32m        const upper = [];[m
+[32m+[m[32m        const lower = [];[m
+[32m+[m[32m        const cappedXs = xs.slice(0, len);[m
+[32m+[m[32m        for (let j = 0; j < len; j++) {[m
+[32m+[m[32m            const base = transform(Number(gSeries[j] ?? 0));[m
+[32m+[m[32m            const sigma = transform(3 * Math.abs(Number(gSigma[j] ?? 0)));[m
+[32m+[m[32m            upper.push(base + sigma);[m
+[32m+[m[32m            lower.push(Math.max(base - sigma, 0));[m
+[32m+[m[32m        }[m
+[32m+[m[32m        return [[m
+[32m+[m[32m            {[m
+[32m+[m[32m                x: cappedXs,[m
+[32m+[m[32m                y: upper,[m
+[32m+[m[32m                type: 'scatter',[m
+[32m+[m[32m                mode: 'lines',[m
+[32m+[m[32m                line: { color: '#cccccc', width: 1, dash: 'dot' },[m
+[32m+[m[32m                hoverinfo: 'skip',[m
+[32m+[m[32m                showlegend: false[m
+[32m+[m[32m            },[m
+[32m+[m[32m            {[m
+[32m+[m[32m                x: cappedXs,[m
+[32m+[m[32m                y: lower,[m
+[32m+[m[32m                type: 'scatter',[m
+[32m+[m[32m                mode: 'lines',[m
+[32m+[m[32m                line: { color: '#cccccc', width: 1, dash: 'dot' },[m
+[32m+[m[32m                hoverinfo: 'skip',[m
+[32m+[m[32m                showlegend: false[m
+[32m+[m[32m            }[m
+[32m+[m[32m        ];[m
+[32m+[m[32m    });[m
+ }[m
+ [m
+ // WebSocket & Controls[m
+[36m@@ -440,9 +554,11 @@[m [mfunction updateAllVisuals(index, isScrubbing = false) {[m
+     }[m
+ [m
+     const tf = getTimeFactor();[m
+[32m+[m[32m    const af = getAngleFactor();[m
+     const of = getOmegaFactor();[m
+     const tx = dataset.t[i] * tf;[m
+[31m-    Plotly.extendTraces('quatPlot',  { x: [[tx],[tx],[tx],[tx]], y: [[dataset.qx[i]],[dataset.qy[i]],[dataset.qz[i]],[dataset.qw[i]]] }, [0,1,2,3]);[m
+[32m+[m[32m    ensureRotationVectorUpTo(i);[m
+[32m+[m[32m    Plotly.extendTraces('quatPlot',  { x: [[tx],[tx],[tx]], y: [[rotationVectorCache.x[i] * af],[rotationVectorCache.y[i] * af],[rotationVectorCache.z[i] * af]] }, [0,1,2]);[m
+     Plotly.extendTraces('omegaPlot', { x: [[tx],[tx],[tx]], y: [[dataset.p[i] * of],[dataset.q[i] * of],[dataset.r[i] * of]] }, [0,1,2]);[m
+     Plotly.extendTraces('hPlot',     { x: [[tx],[tx],[tx]], y: [[dataset.hx[i]],[dataset.hy[i]],[dataset.hz[i]]] }, [0,1,2]);[m
+ }[m
+[36m@@ -503,6 +619,7 @@[m [mfunction renderSimInfo(m) {[m
+ function startPlaybackFromDataset(data, m=null) {[m
+     dataset = data;[m
+     metrics = m;[m
+[32m+[m[32m    resetRotationVectorCache();[m
+     // Read Earth rotation parameters from dataset[m
+     earthInitialSiderealAngleRad = Number(data.earth_initial_sidereal_angle_rad || 0.0) || 0.0;[m
+     earthSpinRateRadps = Number(data.earth_spin_rate_radps || 0.0) || 0.0;[m
+[36m@@ -512,11 +629,10 @@[m [mfunction startPlaybackFromDataset(data, m=null) {[m
+     }[m
+     frameIndex = 0;[m
+     if (typeof Plotly !== 'undefined' && !groundTruthPlotsInitialised) {[m
+[31m-        createMultiTraceChart('quatPlot', 'Attitude quaternion', [[m
+[31m-            { name: 'q<sub>x</sub>', color: '#ff0000' },[m
+[31m-            { name: 'q<sub>y</sub>', color: '#00ff00' },[m
+[31m-            { name: 'q<sub>z</sub>', color: '#0000ff' },[m
+[31m-            { name: 'q<sub>w</sub>', color: '#ffffff' }[m
+[32m+[m[32m        createMultiTraceChart('quatPlot', `Rotation vector (${getAngleUnitLabel()})`, [[m
+[32m+[m[32m            { name: 'θ<sub>x</sub>', color: '#ff0000' },[m
+[32m+[m[32m            { name: 'θ<sub>y</sub>', color: '#00ff00' },[m
+[32m+[m[32m            { name: 'θ<sub>z</sub>', color: '#0000ff' }[m
+         ]);[m
+         createMultiTraceChart('omegaPlot', 'Angular velocity', [[m
+             { name: 'ω<sub>x</sub>', color: '#ff0000' },[m
+[36m@@ -530,6 +646,7 @@[m [mfunction startPlaybackFromDataset(data, m=null) {[m
+         ]);[m
+         groundTruthPlotsInitialised = true;[m
+     }[m
+[32m+[m[32m    updateRotationVectorAxisTitle();[m
+ [m
+     timelineSlider.max = dataset.t.length - 1;[m
+     updateAllVisuals(0, true);[m
+[36m@@ -724,6 +841,14 @@[m [mif (omegaUnitSelect) {[m
+         }[m
+     });[m
+ }[m
+[32m+[m[32mif (angleUnitSelect) {[m
+[32m+[m[32m    angleUnitSelect.addEventListener('change', () => {[m
+[32m+[m[32m        if (currentPlotMode === 'ground_truth') {[m
+[32m+[m[32m            rebuildSeriesUpTo(frameIndex);[m
+[32m+[m[32m        }[m
+[32m+[m[32m        updateRotationVectorAxisTitle();[m
+[32m+[m[32m    });[m
+[32m+[m[32m}[m
+ [m
+ // Animation loop[m
+ function animate() {[m
