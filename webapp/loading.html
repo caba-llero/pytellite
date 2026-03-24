@@ -139,8 +139,11 @@
             } catch (e) {
                 console.error(e);
                 animateTo(100);
-                // Fallback: still navigate; the sim page will compute via websocket
-                window.location.replace('/simulation?' + params.toString());
+                const title = document.querySelector('.loading-title');
+                title.textContent = 'Computation failed: ' + (e.message || e);
+                title.style.color = '#ff6b6b';
+                // Fallback: still navigate after a delay so the user sees the error
+                setTimeout(() => window.location.replace('/simulation?' + params.toString()), 4000);
             }
         })();
     </script>
